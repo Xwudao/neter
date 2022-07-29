@@ -143,10 +143,10 @@ func (g *GenerateRoute) updateRoot() {
 
 	//update imports
 	pkgName := fmt.Sprintf("%s/internal/routes/%s", g.ModName, g.PackageName)
-	added := astutil.AddNamedImport(fset, f, g.PackageName, pkgName)
-	if !added {
-		utils.CheckErrWithStatus(fmt.Errorf("can't add import [%s]", pkgName))
-	}
+	_ = astutil.AddNamedImport(fset, f, g.PackageName, pkgName)
+	//if !added {
+	//	utils.CheckErrWithStatus(fmt.Errorf("can't add import [%s]", pkgName))
+	//}
 
 	var dst bytes.Buffer
 	err = format.Node(&dst, fset, f)
@@ -176,10 +176,10 @@ func (g *GenerateRoute) updateProvider() {
 
 	//update imports
 	pkgName := fmt.Sprintf("%s/internal/routes/%s", g.ModName, g.PackageName)
-	added := astutil.AddNamedImport(fset, f, g.PackageName, pkgName)
-	if !added {
-		utils.CheckErrWithStatus(fmt.Errorf("can't add import [%s]", pkgName))
-	}
+	_ = astutil.AddNamedImport(fset, f, g.PackageName, pkgName)
+	//if !added {
+	//	utils.CheckErrWithStatus(fmt.Errorf("can't add import [%s]", pkgName))
+	//}
 
 	var dst bytes.Buffer
 	err = format.Node(&dst, fset, f)

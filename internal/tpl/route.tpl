@@ -4,6 +4,9 @@ package {{.PackageName}}
 import (
 	"github.com/gin-gonic/gin"
 	"github.com/knadh/koanf"
+
+
+	"{{.ModName}}/internal/core"
 )
 
 type {{.StructName}} struct {
@@ -21,13 +24,12 @@ func New{{.StructName}}(g *gin.Engine, conf *koanf.Koanf) *{{.StructName}} {
 }
 
 func (r *{{.StructName}}) Reg() {
-	r.g.GET("/{{.PackageName}}/hello", r.{{.Name}}())
+	r.g.GET("/{{.PackageName}}/hello", core.WrapData(r.{{.Name}}()))
 }
 
-func (r *{{.StructName}}) {{.Name}}() gin.HandlerFunc {
-	return func(c *gin.Context) {
-		name := c.Query("name")
 
-		c.String(200, "hello"+name)
+func (r *{{.StructName}}) {{.Name}}() core.WrappedHandlerFunc {
+	return func(c *gin.Context) (interface{}, *core.RtnStatus) {
+		return "hello", nil
 	}
 }
