@@ -7,15 +7,21 @@ package cmd
 import (
 	"bytes"
 	"errors"
+	"fmt"
+	"go/ast"
 	"go/format"
+	"go/parser"
+	"go/token"
 	"os"
 	"path/filepath"
 	"text/template"
 
 	"github.com/iancoleman/strcase"
 	"github.com/spf13/cobra"
+	"golang.org/x/tools/go/ast/astutil"
 
 	"github.com/Xwudao/neter/internal/tpl"
+	"github.com/Xwudao/neter/internal/visitor"
 	"github.com/Xwudao/neter/pkg/utils"
 )
 
@@ -34,6 +40,8 @@ var genCmd = &cobra.Command{
 		switch tpe {
 		case "route":
 			g.GenRoute()
+			g.updateRoot()
+			g.updateProvider()
 			utils.Info("generate route success")
 
 		default:
@@ -115,6 +123,71 @@ func (g *GenerateRoute) GenRoute() {
 	err = utils.SaveToFile(g.saveFilePath, source, false)
 	utils.CheckErrWithStatus(err)
 
+}
+
+func (g *GenerateRoute) updateRoot() {
+	utils.Info("updating root.go")
+	rootFilePath := filepath.Join(filepath.Dir(g.RootPath), "root.go")
+	exist := utils.CheckExist(rootFilePath)
+	if !exist {
+		utils.CheckErrWithStatus(fmt.Errorf("can't find root.go file [%s]", rootFilePath))
+	}
+
+	fset := token.NewFileSet() // positions are relative to fset
+	f, err := parser.ParseFile(fset, rootFilePath, nil, 0)
+	utils.CheckErrWithStatus(err)
+
+	//update content
+	walker := visitor.NewUpdateRoot(fmt.Sprintf("%s%s", g.PackageName, g.StructName), fmt.Sprintf("*%s.%s", g.PackageName, g.StructName))
+	ast.Walk(walker, f)
+
+	//update imports
+	pkgName := fmt.Sprintf("%s/internal/routes/%s", g.ModName, g.PackageName)
+	added := astutil.AddNamedImport(fset, f, g.PackageName, pkgName)
+	if !added {
+		utils.CheckErrWithStatus(fmt.Errorf("can't add import [%s]", pkgName))
+	}
+
+	var dst bytes.Buffer
+	err = format.Node(&dst, fset, f)
+	utils.CheckErrWithStatus(err)
+	err = utils.SaveToFile(rootFilePath, dst.Bytes(), true)
+	utils.CheckErrWithStatus(err)
+
+	utils.Info("updating root.go success")
+}
+
+//update provider
+func (g *GenerateRoute) updateProvider() {
+	utils.Info("updating injector.go")
+	rootFilePath := filepath.Join(filepath.Dir(g.RootPath), "injector.go")
+	exist := utils.CheckExist(rootFilePath)
+	if !exist {
+		utils.CheckErrWithStatus(fmt.Errorf("can't find injector.go file [%s]", rootFilePath))
+	}
+
+	fset := token.NewFileSet() // positions are relative to fset
+	f, err := parser.ParseFile(fset, rootFilePath, nil, 0)
+	utils.CheckErrWithStatus(err)
+
+	//update content
+	walker := visitor.NewProvideVisitor(g.PackageName, fmt.Sprintf("New%s", g.StructName))
+	ast.Walk(walker, f)
+
+	//update imports
+	pkgName := fmt.Sprintf("%s/internal/routes/%s", g.ModName, g.PackageName)
+	added := astutil.AddNamedImport(fset, f, g.PackageName, pkgName)
+	if !added {
+		utils.CheckErrWithStatus(fmt.Errorf("can't add import [%s]", pkgName))
+	}
+
+	var dst bytes.Buffer
+	err = format.Node(&dst, fset, f)
+	utils.CheckErrWithStatus(err)
+	err = utils.SaveToFile(rootFilePath, dst.Bytes(), true)
+	utils.CheckErrWithStatus(err)
+
+	utils.Info("updating injector.go success")
 }
 
 func (g *GenerateRoute) checkFile() {
