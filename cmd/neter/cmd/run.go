@@ -6,7 +6,9 @@ package cmd
 
 import (
 	"bufio"
+	"context"
 	"fmt"
+	"io"
 	"log"
 	"os"
 	"os/exec"
@@ -55,23 +57,35 @@ var runCmd = &cobra.Command{
 			return
 		}
 
-		runCmd := exec.Command(name)
-		pipe, _ := runCmd.StdoutPipe()
+		runCmd := exec.Command(name, args...)
+		stdOutPipe, _ := runCmd.StdoutPipe()
+		stdErrPipe, _ := runCmd.StderrPipe()
 		if err := runCmd.Start(); err != nil {
 			// handle error
 			log.Fatalf("failed to start cmd: %v", err)
 		}
 
-		go func() {
+		ctx, cancel := context.WithCancel(context.Background())
 
-			scanner := bufio.NewScanner(pipe)
+		go func() {
+			rd := io.MultiReader(stdOutPipe, stdErrPipe)
+			scanner := bufio.NewScanner(rd)
 			scanner.Split(bufio.ScanLines)
-			for scanner.Scan() {
-				m := scanner.Text()
-				fmt.Println(m)
+			for {
+				select {
+				case <-ctx.Done():
+					return
+				default:
+				}
+				for scanner.Scan() {
+					m := scanner.Text()
+					fmt.Println(m)
+				}
+				cancel()
+
 			}
 
-			//reader := bufio.NewReader(pipe)
+			//reader := bufio.NewReader(stdOutPipe)
 			//line, err := reader.ReadString('\n')
 			//for err == nil {
 			//	fmt.Println(line)
@@ -81,16 +95,27 @@ var runCmd = &cobra.Command{
 
 		quit := make(chan os.Signal)
 		signal.Notify(quit, syscall.SIGINT, syscall.SIGTERM)
-		<-quit
-		if err := runCmd.Process.Kill(); err != nil {
-			log.Fatalf("kill app err: %s", err.Error())
-			return
-		}
-		if del {
-			time.Sleep(time.Millisecond * 500)
-			err := os.Remove(name)
-			if err != nil {
-				log.Fatalf("delete generate file err: %s", err.Error())
+
+		defer func() {
+			if del {
+				time.Sleep(time.Millisecond * 500)
+				err := os.Remove(name)
+				if err != nil {
+					log.Fatalf("delete generate file err: %s", err.Error())
+					return
+				}
+			}
+		}()
+
+		for {
+			select {
+			case <-quit:
+				log.Println("quit")
+				cancel()
+				_ = runCmd.Process.Kill()
+				return
+			case <-ctx.Done():
+				log.Println("done")
 				return
 			}
 		}
