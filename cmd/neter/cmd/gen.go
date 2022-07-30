@@ -159,11 +159,11 @@ func (g *GenerateRoute) updateRoot() {
 
 //update provider
 func (g *GenerateRoute) updateProvider() {
-	utils.Info("updating injector.go")
-	rootFilePath := filepath.Join(filepath.Dir(g.RootPath), "injector.go")
+	utils.Info("updating provider.go")
+	rootFilePath := filepath.Join(filepath.Dir(g.RootPath), "provider.go")
 	exist := utils.CheckExist(rootFilePath)
 	if !exist {
-		utils.CheckErrWithStatus(fmt.Errorf("can't find injector.go file [%s]", rootFilePath))
+		utils.CheckErrWithStatus(fmt.Errorf("can't find provider.go file [%s]", rootFilePath))
 	}
 
 	fset := token.NewFileSet() // positions are relative to fset
@@ -187,7 +187,7 @@ func (g *GenerateRoute) updateProvider() {
 	err = utils.SaveToFile(rootFilePath, dst.Bytes(), true)
 	utils.CheckErrWithStatus(err)
 
-	utils.Info("updating injector.go success")
+	utils.Info("updating provider.go success")
 }
 
 func (g *GenerateRoute) checkFile() {
