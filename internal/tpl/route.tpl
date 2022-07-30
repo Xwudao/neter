@@ -24,7 +24,7 @@ func New{{.StructName}}(g *gin.Engine, conf *koanf.Koanf) *{{.StructName}} {
 }
 
 func (r *{{.StructName}}) Reg() {
-	r.g.GET("/{{.PackageName}}/hello", core.WrapData(r.{{.Name}}()))
+	r.g.GET("/{{.PackageName}}/{{.Name}}", core.WrapData(r.{{.Name}}()))
 }
 
 

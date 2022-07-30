@@ -35,14 +35,14 @@ func (v *UpdateRoot) Visit(node ast.Node) ast.Visitor {
 			},
 		)
 		return v
-	case *ast.CompositeLit:
-		n.Elts = append(n.Elts,
-			&ast.KeyValueExpr{
-				Key:   ast.NewIdent(v.varName),
-				Value: ast.NewIdent(v.varName),
-			},
-		)
-		return v
+	//case *ast.CompositeLit:
+	//	n.Elts = append(n.Elts,
+	//		&ast.KeyValueExpr{
+	//			Key:   ast.NewIdent(v.varName),
+	//			Value: ast.NewIdent(v.varName),
+	//		},
+	//	)
+	//	return v
 	case *ast.FuncDecl:
 		switch n.Name.Name {
 		case "Register":
@@ -67,6 +67,24 @@ func (v *UpdateRoot) Visit(node ast.Node) ast.Visitor {
 					Type:  ast.NewIdent(v.varType),
 				},
 			)
+
+			for _, stmt := range n.Body.List {
+				if as, ok := stmt.(*ast.AssignStmt); ok {
+					if len(as.Rhs) >= 0 {
+						rhs := as.Rhs[0]
+						if unEx, ok := rhs.(*ast.UnaryExpr); ok {
+							if cpList, ok := unEx.X.(*ast.CompositeLit); ok {
+								cpList.Elts = append(cpList.Elts,
+									&ast.KeyValueExpr{
+										Key:   ast.NewIdent(v.varName),
+										Value: ast.NewIdent(v.varName),
+									},
+								)
+							}
+						}
+					}
+				}
+			}
 		}
 		return v
 	}
