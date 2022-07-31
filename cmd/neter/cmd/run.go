@@ -6,6 +6,7 @@ package cmd
 
 import (
 	"bufio"
+	"bytes"
 	"context"
 	"fmt"
 	"io"
@@ -44,19 +45,28 @@ var runCmd = &cobra.Command{
 
 		log.SetPrefix("[run] ")
 
+		var (
+			res string
+			err error
+		)
 		if wire {
 			log.Println("generating wire...")
-			if err := run("wire", "gen", "./cmd/app/"); err != nil {
+			if res, err = run("wire", "gen", "./cmd/app/"); err != nil {
+				log.Println(res)
 				log.Fatalf("wire gen error: %v", err)
 				return
 			}
+			log.Println(res)
+
 		}
 
 		log.Println("generating app...")
-		if err := run("go", "build", "-o", name, mainFile, wireFile); err != nil {
+		if res, err = run("go", "build", "-o", name, mainFile, wireFile); err != nil {
+			log.Println(res)
 			log.Fatalf("go build error: %v", err)
 			return
 		}
+		log.Println(res)
 
 		var innerArgs []string
 		if len(args) > 1 {
@@ -135,12 +145,17 @@ var runCmd = &cobra.Command{
 	},
 }
 
-func run(name string, args ...string) error {
+func run(name string, args ...string) (string, error) {
 	cmd := exec.Command(name, args...)
-	err := cmd.Start()
-	err = cmd.Wait()
 
-	return err
+	var stdout, stderr bytes.Buffer
+	cmd.Stdout = &stdout
+	cmd.Stderr = &stderr
+	err := cmd.Run()
+	if err != nil {
+		return stderr.String(), err
+	}
+	return stdout.String(), nil
 }
 
 func init() {
