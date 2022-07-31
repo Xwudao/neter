@@ -9,6 +9,7 @@ func New{{.StructBizName}}() *{{.StructBizName}} {
 }
 
 type {{.ToCamel .Name}}Repository interface {
+	TodoFunc() error
 }
 
 func (h *{{.StructBizName}}) Index() string {

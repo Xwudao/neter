@@ -46,6 +46,7 @@ var genCmd = &cobra.Command{
 		case "biz":
 			g.GenBiz()
 			g.updateBizProvider()
+			g.GenRepo()
 			utils.Info("generate biz success")
 		default:
 			utils.CheckErrWithStatus(errors.New("unknown type"))
@@ -80,12 +81,15 @@ type GenerateRoute struct {
 
 	routeTpl string
 	bizTpl   string
+	repoTpl  string
 
 	FilenameRouteSuffix string
 	FilenameBizSuffix   string
+	FilenameRepoSuffix  string
 
 	saveRouteFilePath string //eg: home_route.go
 	saveBizFilePath   string //eg: home_biz.go
+	saveRepoFilePath  string //eg: home_repo.go
 
 	Name     string //eg: home
 	TypeName string //eg: route, service, etc
@@ -101,15 +105,19 @@ func NewGenerate(name string, typeName string) *GenerateRoute {
 func (g *GenerateRoute) init() {
 	g.FilenameRouteSuffix = "_routes.go"
 	g.FilenameBizSuffix = "_biz.go"
+	g.FilenameRepoSuffix = "_repo.go"
 	g.RouteNameSuffix = "Routes"
 	g.PackageName = os.Getenv("GOPACKAGE")
 	g.ModName = utils.GetModName()
 	g.RootPath = utils.CurrentDir()
+
 	g.saveRouteFilePath = filepath.Join(g.RootPath, strcase.ToSnake(g.Name)+g.FilenameRouteSuffix)
 	g.saveBizFilePath = filepath.Join(g.RootPath, strcase.ToSnake(g.Name)+g.FilenameBizSuffix)
+	g.saveRepoFilePath = filepath.Join(filepath.Dir(g.RootPath), "data", strcase.ToSnake(g.Name)+g.FilenameRepoSuffix)
 
 	g.routeTpl = tpl.RouteTpl
 	g.bizTpl = tpl.BizTpl
+	g.repoTpl = tpl.RepoTpl
 
 	g.StructRouteName = strcase.ToCamel(g.Name + "Route")
 	g.StructBizName = strcase.ToCamel(g.Name + "Biz")
@@ -152,6 +160,23 @@ func (g *GenerateRoute) GenBiz() {
 	utils.CheckErrWithStatus(err)
 
 	err = utils.SaveToFile(g.saveBizFilePath, source, false)
+	utils.CheckErrWithStatus(err)
+}
+
+func (g *GenerateRoute) GenRepo() {
+	g.checkFile(g.saveRepoFilePath)
+
+	parse, err := template.New("repo").Parse(g.repoTpl)
+	utils.CheckErrWithStatus(err)
+
+	buffer := bytes.NewBuffer([]byte{})
+	err = parse.Execute(buffer, g)
+	utils.CheckErrWithStatus(err)
+
+	source, err := format.Source(buffer.Bytes())
+	utils.CheckErrWithStatus(err)
+
+	err = utils.SaveToFile(g.saveRepoFilePath, source, false)
 	utils.CheckErrWithStatus(err)
 }
 
