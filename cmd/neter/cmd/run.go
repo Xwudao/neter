@@ -89,31 +89,8 @@ var runCmd = &cobra.Command{
 
 		ctx, cancel := context.WithCancel(context.Background())
 
-		go func() {
-			rd := io.MultiReader(stdOutPipe, stdErrPipe)
-			scanner := bufio.NewScanner(rd)
-			scanner.Split(bufio.ScanLines)
-			for {
-				select {
-				case <-ctx.Done():
-					return
-				default:
-				}
-				for scanner.Scan() {
-					m := scanner.Text()
-					fmt.Println(m)
-				}
-				cancel()
-
-			}
-
-			//reader := bufio.NewReader(stdOutPipe)
-			//line, err := reader.ReadString('\n')
-			//for err == nil {
-			//	fmt.Println(line)
-			//	line, err = reader.ReadString('\n')
-			//}
-		}()
+		go write(ctx, cancel, stdOutPipe)
+		go write(ctx, cancel, stdErrPipe)
 
 		quit := make(chan os.Signal)
 		signal.Notify(quit, syscall.SIGINT, syscall.SIGTERM)
@@ -143,6 +120,23 @@ var runCmd = &cobra.Command{
 		}
 
 	},
+}
+
+func write(ctx context.Context, cancel context.CancelFunc, rd io.Reader) {
+	scanner := bufio.NewScanner(rd)
+	scanner.Split(bufio.ScanLines)
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		default:
+		}
+		for scanner.Scan() {
+			m := scanner.Text()
+			fmt.Println(m)
+		}
+		cancel()
+	}
 }
 
 func run(name string, args ...string) (string, error) {
