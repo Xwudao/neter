@@ -229,7 +229,7 @@ func (g *GenerateRoute) updateBizProvider() {
 	utils.CheckErrWithStatus(err)
 
 	//update content
-	walker := visitor.NewBizProvideVisitor(fmt.Sprintf("New%s", g.StructBizName))
+	walker := visitor.NewCurrentProvideVisitor(fmt.Sprintf("New%s", g.StructBizName))
 	ast.Walk(walker, f)
 
 	var dst bytes.Buffer
@@ -255,7 +255,7 @@ func (g *GenerateRoute) updateRepoProvider() {
 	utils.CheckErrWithStatus(err)
 
 	//update content
-	walker := visitor.NewBizProvideVisitor(fmt.Sprintf("New%s", g.StructRepoName))
+	walker := visitor.NewCurrentProvideVisitor(fmt.Sprintf("New%s", g.StructRepoName))
 	ast.Walk(walker, f)
 
 	var dst bytes.Buffer
