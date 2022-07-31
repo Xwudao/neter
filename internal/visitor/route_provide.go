@@ -5,16 +5,16 @@ import (
 	"go/token"
 )
 
-type ProvideVisitor struct {
+type RouteProvideVisitor struct {
 	pkgName string
 	FunName string
 }
 
-func NewProvideVisitor(pkgName string, funName string) *ProvideVisitor {
-	return &ProvideVisitor{pkgName: pkgName, FunName: funName}
+func NewRouteProvideVisitor(pkgName string, funName string) *RouteProvideVisitor {
+	return &RouteProvideVisitor{pkgName: pkgName, FunName: funName}
 }
 
-func (v *ProvideVisitor) Visit(node ast.Node) ast.Visitor {
+func (v *RouteProvideVisitor) Visit(node ast.Node) ast.Visitor {
 	switch n := node.(type) {
 	case *ast.GenDecl:
 		if n.Tok == token.VAR && len(n.Specs) > 0 {

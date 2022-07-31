@@ -41,10 +41,11 @@ var genCmd = &cobra.Command{
 		case "route":
 			g.GenRoute()
 			g.updateRoot()
-			g.updateProvider()
+			g.updateRouteProvider()
 			utils.Info("generate route success")
 		case "biz":
 			g.GenBiz()
+			g.updateBizProvider()
 			utils.Info("generate biz success")
 		default:
 			utils.CheckErrWithStatus(errors.New("unknown type"))
@@ -186,8 +187,34 @@ func (g *GenerateRoute) updateRoot() {
 	utils.Info("updating root.go success")
 }
 
-//update provider
-func (g *GenerateRoute) updateProvider() {
+//update biz provider
+func (g *GenerateRoute) updateBizProvider() {
+	utils.Info("updating provider.go")
+	rootFilePath := filepath.Join(g.RootPath, "provider.go")
+	exist := utils.CheckExist(rootFilePath)
+	if !exist {
+		utils.CheckErrWithStatus(fmt.Errorf("can't find provider.go file [%s]", rootFilePath))
+	}
+
+	fset := token.NewFileSet() // positions are relative to fset
+	f, err := parser.ParseFile(fset, rootFilePath, nil, 0)
+	utils.CheckErrWithStatus(err)
+
+	//update content
+	walker := visitor.NewBizProvideVisitor(fmt.Sprintf("New%s", g.StructBizName))
+	ast.Walk(walker, f)
+
+	var dst bytes.Buffer
+	err = format.Node(&dst, fset, f)
+	utils.CheckErrWithStatus(err)
+	err = utils.SaveToFile(rootFilePath, dst.Bytes(), true)
+	utils.CheckErrWithStatus(err)
+
+	utils.Info("updating provider.go success")
+}
+
+//update route provider
+func (g *GenerateRoute) updateRouteProvider() {
 	utils.Info("updating provider.go")
 	rootFilePath := filepath.Join(filepath.Dir(g.RootPath), "provider.go")
 	exist := utils.CheckExist(rootFilePath)
@@ -200,7 +227,7 @@ func (g *GenerateRoute) updateProvider() {
 	utils.CheckErrWithStatus(err)
 
 	//update content
-	walker := visitor.NewProvideVisitor(g.PackageName, fmt.Sprintf("New%s", g.StructRouteName))
+	walker := visitor.NewRouteProvideVisitor(g.PackageName, fmt.Sprintf("New%s", g.StructRouteName))
 	ast.Walk(walker, f)
 
 	//update imports
