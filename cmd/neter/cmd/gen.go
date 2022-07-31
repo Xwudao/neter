@@ -47,6 +47,7 @@ var genCmd = &cobra.Command{
 			g.GenBiz()
 			g.updateBizProvider()
 			g.GenRepo()
+			g.updateRepoProvider()
 			utils.Info("generate biz success")
 		default:
 			utils.CheckErrWithStatus(errors.New("unknown type"))
@@ -96,6 +97,7 @@ type GenerateRoute struct {
 
 	StructRouteName string //eg: HomeRoute
 	StructBizName   string //eg: HomeBiz
+	StructRepoName  string //eg: HomeRepo
 }
 
 func NewGenerate(name string, typeName string) *GenerateRoute {
@@ -121,6 +123,7 @@ func (g *GenerateRoute) init() {
 
 	g.StructRouteName = strcase.ToCamel(g.Name + "Route")
 	g.StructBizName = strcase.ToCamel(g.Name + "Biz")
+	g.StructRepoName = strcase.ToCamel(g.Name + "Repository")
 
 	if g.PackageName == "" {
 		utils.CheckErrWithStatus(errors.New("please run with //go:generate"))
@@ -227,6 +230,32 @@ func (g *GenerateRoute) updateBizProvider() {
 
 	//update content
 	walker := visitor.NewBizProvideVisitor(fmt.Sprintf("New%s", g.StructBizName))
+	ast.Walk(walker, f)
+
+	var dst bytes.Buffer
+	err = format.Node(&dst, fset, f)
+	utils.CheckErrWithStatus(err)
+	err = utils.SaveToFile(rootFilePath, dst.Bytes(), true)
+	utils.CheckErrWithStatus(err)
+
+	utils.Info("updating provider.go success")
+}
+
+//update repo provider
+func (g *GenerateRoute) updateRepoProvider() {
+	utils.Info("updating provider.go")
+	rootFilePath := filepath.Join(filepath.Dir(g.RootPath), "data", "provider.go")
+	exist := utils.CheckExist(rootFilePath)
+	if !exist {
+		utils.CheckErrWithStatus(fmt.Errorf("can't find provider.go file [%s]", rootFilePath))
+	}
+
+	fset := token.NewFileSet() // positions are relative to fset
+	f, err := parser.ParseFile(fset, rootFilePath, nil, 0)
+	utils.CheckErrWithStatus(err)
+
+	//update content
+	walker := visitor.NewBizProvideVisitor(fmt.Sprintf("New%s", g.StructRepoName))
 	ast.Walk(walker, f)
 
 	var dst bytes.Buffer
