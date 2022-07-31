@@ -43,7 +43,9 @@ var genCmd = &cobra.Command{
 			g.updateRoot()
 			g.updateProvider()
 			utils.Info("generate route success")
-
+		case "biz":
+			g.GenBiz()
+			utils.Info("generate biz success")
 		default:
 			utils.CheckErrWithStatus(errors.New("unknown type"))
 		}
@@ -71,18 +73,24 @@ func init() {
 
 type GenerateRoute struct {
 	RootPath        string
-	FilenameSuffix  string
 	RouteNameSuffix string
 	PackageName     string
 	ModName         string
 
 	routeTpl string
+	bizTpl   string
 
-	saveFilePath string //eg: home_route.go
+	FilenameRouteSuffix string
+	FilenameBizSuffix   string
 
-	Name       string //eg: home
-	TypeName   string //eg: route, service, etc
-	StructName string //eg: HomeRoute
+	saveRouteFilePath string //eg: home_route.go
+	saveBizFilePath   string //eg: home_biz.go
+
+	Name     string //eg: home
+	TypeName string //eg: route, service, etc
+
+	StructRouteName string //eg: HomeRoute
+	StructBizName   string //eg: HomeBiz
 }
 
 func NewGenerate(name string, typeName string) *GenerateRoute {
@@ -90,16 +98,20 @@ func NewGenerate(name string, typeName string) *GenerateRoute {
 }
 
 func (g *GenerateRoute) init() {
-	g.FilenameSuffix = "_routes.go"
+	g.FilenameRouteSuffix = "_routes.go"
+	g.FilenameBizSuffix = "_biz.go"
 	g.RouteNameSuffix = "Routes"
 	g.PackageName = os.Getenv("GOPACKAGE")
 	g.ModName = utils.GetModName()
 	g.RootPath = utils.CurrentDir()
-	g.saveFilePath = filepath.Join(g.RootPath, strcase.ToSnake(g.Name)+g.FilenameSuffix)
+	g.saveRouteFilePath = filepath.Join(g.RootPath, strcase.ToSnake(g.Name)+g.FilenameRouteSuffix)
+	g.saveBizFilePath = filepath.Join(g.RootPath, strcase.ToSnake(g.Name)+g.FilenameBizSuffix)
 
 	g.routeTpl = tpl.RouteTpl
+	g.bizTpl = tpl.BizTpl
 
-	g.StructName = strcase.ToCamel(g.Name + "Route")
+	g.StructRouteName = strcase.ToCamel(g.Name + "Route")
+	g.StructBizName = strcase.ToCamel(g.Name + "Biz")
 
 	if g.PackageName == "" {
 		utils.CheckErrWithStatus(errors.New("please run with //go:generate"))
@@ -108,7 +120,7 @@ func (g *GenerateRoute) init() {
 }
 
 func (g *GenerateRoute) GenRoute() {
-	g.checkFile()
+	g.checkFile(g.saveRouteFilePath)
 
 	parse, err := template.New("route").Parse(g.routeTpl)
 	utils.CheckErrWithStatus(err)
@@ -120,9 +132,26 @@ func (g *GenerateRoute) GenRoute() {
 	source, err := format.Source(buffer.Bytes())
 	utils.CheckErrWithStatus(err)
 
-	err = utils.SaveToFile(g.saveFilePath, source, false)
+	err = utils.SaveToFile(g.saveRouteFilePath, source, false)
 	utils.CheckErrWithStatus(err)
 
+}
+
+func (g *GenerateRoute) GenBiz() {
+	g.checkFile(g.saveBizFilePath)
+
+	parse, err := template.New("biz").Parse(g.bizTpl)
+	utils.CheckErrWithStatus(err)
+
+	buffer := bytes.NewBuffer([]byte{})
+	err = parse.Execute(buffer, g)
+	utils.CheckErrWithStatus(err)
+
+	source, err := format.Source(buffer.Bytes())
+	utils.CheckErrWithStatus(err)
+
+	err = utils.SaveToFile(g.saveBizFilePath, source, false)
+	utils.CheckErrWithStatus(err)
 }
 
 func (g *GenerateRoute) updateRoot() {
@@ -138,7 +167,7 @@ func (g *GenerateRoute) updateRoot() {
 	utils.CheckErrWithStatus(err)
 
 	//update content
-	walker := visitor.NewUpdateRoot(fmt.Sprintf("%s%s", g.PackageName, g.StructName), fmt.Sprintf("*%s.%s", g.PackageName, g.StructName))
+	walker := visitor.NewUpdateRoot(fmt.Sprintf("%s%s", g.PackageName, g.StructRouteName), fmt.Sprintf("*%s.%s", g.PackageName, g.StructRouteName))
 	ast.Walk(walker, f)
 
 	//update imports
@@ -171,7 +200,7 @@ func (g *GenerateRoute) updateProvider() {
 	utils.CheckErrWithStatus(err)
 
 	//update content
-	walker := visitor.NewProvideVisitor(g.PackageName, fmt.Sprintf("New%s", g.StructName))
+	walker := visitor.NewProvideVisitor(g.PackageName, fmt.Sprintf("New%s", g.StructRouteName))
 	ast.Walk(walker, f)
 
 	//update imports
@@ -190,8 +219,8 @@ func (g *GenerateRoute) updateProvider() {
 	utils.Info("updating provider.go success")
 }
 
-func (g *GenerateRoute) checkFile() {
-	if _, err := os.Stat(g.saveFilePath); err == nil {
+func (g *GenerateRoute) checkFile(p string) {
+	if _, err := os.Stat(p); err == nil {
 		utils.CheckErrWithStatus(errors.New("file already exists"))
 		return
 	}
@@ -201,4 +230,8 @@ func (g *GenerateRoute) checkFile() {
 
 func (g *GenerateRoute) ToLowerCamel(str string) string {
 	return strcase.ToLowerCamel(str)
+}
+
+func (g *GenerateRoute) ToCamel(str string) string {
+	return strcase.ToCamel(str)
 }

@@ -9,13 +9,13 @@ import (
 	"{{.ModName}}/internal/core"
 )
 
-type {{.StructName}} struct {
+type {{.StructRouteName}} struct {
 	conf *koanf.Koanf
 	g    *gin.Engine
 }
 
-func New{{.StructName}}(g *gin.Engine, conf *koanf.Koanf) *{{.StructName}} {
-	r := &{{.StructName}}{
+func New{{.StructRouteName}}(g *gin.Engine, conf *koanf.Koanf) *{{.StructRouteName}} {
+	r := &{{.StructRouteName}}{
 		conf: conf,
 		g:    g,
 	}
@@ -23,12 +23,12 @@ func New{{.StructName}}(g *gin.Engine, conf *koanf.Koanf) *{{.StructName}} {
 	return r
 }
 
-func (r *{{.StructName}}) Reg() {
+func (r *{{.StructRouteName}}) Reg() {
 	r.g.GET("/{{.PackageName}}/{{.ToLowerCamel .Name}}", core.WrapData(r.{{.ToLowerCamel .Name}}()))
 }
 
 
-func (r *{{.StructName}}) {{.ToLowerCamel .Name}}() core.WrappedHandlerFunc {
+func (r *{{.StructRouteName}}) {{.ToLowerCamel .Name}}() core.WrappedHandlerFunc {
 	return func(c *gin.Context) (interface{}, *core.RtnStatus) {
 		return "hello", nil
 	}
