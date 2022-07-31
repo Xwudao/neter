@@ -14,6 +14,7 @@ import (
 	"os/exec"
 	"os/signal"
 	"runtime"
+	"strings"
 	"syscall"
 	"time"
 
@@ -57,7 +58,18 @@ var runCmd = &cobra.Command{
 			return
 		}
 
-		runCmd := exec.Command(name, args...)
+		var innerArgs []string
+		if len(args) > 1 {
+			for _, arg := range args[1:] {
+				if strings.Contains(arg, "=") {
+					innerArgs = append(innerArgs, "--"+arg)
+				} else {
+					innerArgs = append(innerArgs, arg)
+				}
+			}
+		}
+
+		runCmd := exec.Command(name, append(args, innerArgs...)...)
 		stdOutPipe, _ := runCmd.StdoutPipe()
 		stdErrPipe, _ := runCmd.StderrPipe()
 		if err := runCmd.Start(); err != nil {
