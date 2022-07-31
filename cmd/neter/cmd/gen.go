@@ -196,3 +196,9 @@ func (g *GenerateRoute) checkFile() {
 		return
 	}
 }
+
+//template functions
+
+func (g *GenerateRoute) ToLowerCamel(str string) string {
+	return strcase.ToLowerCamel(str)
+}
