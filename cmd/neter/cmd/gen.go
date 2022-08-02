@@ -12,8 +12,13 @@ import (
 	"go/format"
 	"go/parser"
 	"go/token"
+	"io/ioutil"
+	"log"
 	"os"
+	"os/exec"
 	"path/filepath"
+	"regexp"
+	"strings"
 	"text/template"
 
 	"github.com/iancoleman/strcase"
@@ -54,24 +59,6 @@ var genCmd = &cobra.Command{
 		}
 
 	},
-}
-
-func init() {
-	rootCmd.AddCommand(genCmd)
-
-	// Here you will define your flags and configuration settings.
-
-	// Cobra supports Persistent Flags which will work for this command
-	// and all subcommands, e.g.:
-	// genCmd.PersistentFlags().String("foo", "", "A help for foo")
-
-	// Cobra supports local flags which will only run when this command
-	// is called directly, e.g.:
-	// genCmd.Flags().BoolP("toggle", "t", false, "Help message for toggle")
-	genCmd.Flags().StringP("type", "t", "route", "type of gen")
-	genCmd.Flags().StringP("name", "n", "", "name of gen")
-
-	genCmd.MarkFlagsRequiredTogether("type", "name")
 }
 
 type GenerateRoute struct {
@@ -315,4 +302,75 @@ func (g *GenerateRoute) ToLowerCamel(str string) string {
 
 func (g *GenerateRoute) ToCamel(str string) string {
 	return strcase.ToCamel(str)
+}
+
+// sub commands
+
+var genEntCmd = &cobra.Command{
+	Use:   "ent",
+	Short: "generate entity",
+	Long:  `generate entity`,
+	Run: func(cmd *cobra.Command, args []string) {
+		schemaDir, _ := cmd.Flags().GetString("dir")
+		genFile := filepath.Join(schemaDir, "generate.go")
+		_, err := os.Stat(genFile)
+		utils.CheckErrWithStatus(err)
+
+		genCnt, err := ioutil.ReadFile(genFile)
+		utils.CheckErrWithStatus(err)
+
+		var re = regexp.MustCompile(`(?m)^//go:generate (.*?)$`)
+		submatch := re.FindStringSubmatch(string(genCnt))
+		if len(submatch) < 2 {
+			utils.CheckErrWithStatus(errors.New("can't find generate command"))
+		}
+		originCmd := submatch[1]
+
+		_, after, found := strings.Cut(originCmd, " generate ")
+		if !found {
+			utils.CheckErrWithStatus(errors.New("can't find generate command"))
+		}
+		var cmdArgs = []string{"generate"}
+		//var cmdArgs []string
+		for _, s := range strings.Split(after, " ") {
+			if !strings.Contains(s, "schema") {
+				cmdArgs = append(cmdArgs, s)
+			}
+		}
+		//cwd, _ := os.Getwd()
+		cmdArgs = append(cmdArgs, "--target", filepath.Join(schemaDir, "schema"))
+
+		log.Println("cmdArgs: ", strings.Join(cmdArgs, " "))
+
+		command := exec.Command("ent", "generate")
+		command.Dir = schemaDir
+		command.Args = cmdArgs
+
+		command.Stdout = os.Stdout
+		command.Stderr = os.Stderr
+		err = command.Run()
+		utils.CheckErrWithStatus(err)
+	},
+}
+
+func init() {
+	genCmd.AddCommand(genEntCmd)
+	rootCmd.AddCommand(genCmd)
+
+	// Here you will define your flags and configuration settings.
+
+	// Cobra supports Persistent Flags which will work for this command
+	// and all subcommands, e.g.:
+	// genCmd.PersistentFlags().String("foo", "", "A help for foo")
+
+	// Cobra supports local flags which will only run when this command
+	// is called directly, e.g.:
+	// genCmd.Flags().BoolP("toggle", "t", false, "Help message for toggle")
+	genCmd.Flags().StringP("type", "t", "route", "type of gen")
+	genCmd.Flags().StringP("name", "n", "", "name of gen")
+
+	genCmd.MarkFlagsRequiredTogether("type", "name")
+
+	genEntCmd.Flags().StringP("dir", "d", "./internal/data/ent", "dir of generate.go file")
+
 }
