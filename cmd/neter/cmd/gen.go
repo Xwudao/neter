@@ -12,15 +12,13 @@ import (
 	"go/format"
 	"go/parser"
 	"go/token"
-	"io/ioutil"
-	"log"
 	"os"
-	"os/exec"
 	"path/filepath"
-	"regexp"
-	"strings"
 	"text/template"
 
+	"entgo.io/ent/entc"
+	"entgo.io/ent/entc/gen"
+	"entgo.io/ent/schema/field"
 	"github.com/iancoleman/strcase"
 	"github.com/spf13/cobra"
 	"golang.org/x/tools/go/ast/astutil"
@@ -311,46 +309,28 @@ var genEntCmd = &cobra.Command{
 	Short: "generate entity",
 	Long:  `generate entity`,
 	Run: func(cmd *cobra.Command, args []string) {
-		schemaDir, _ := cmd.Flags().GetString("dir")
-		genFile := filepath.Join(schemaDir, "generate.go")
-		_, err := os.Stat(genFile)
+		cwd, _ := os.Getwd()
+		schemaPath := filepath.Join(cwd, "internal/data//ent/schema")
+		err := entc.Generate(schemaPath, &gen.Config{
+			Hooks: []gen.Hook{
+				PrefixSchema("Prefix"),
+			},
+			IDType:   &field.TypeInfo{Type: field.TypeInt64},
+			Features: []gen.Feature{gen.FeatureVersionedMigration, gen.FeatureModifier},
+		})
 		utils.CheckErrWithStatus(err)
 
-		genCnt, err := ioutil.ReadFile(genFile)
-		utils.CheckErrWithStatus(err)
-
-		var re = regexp.MustCompile(`(?m)^//go:generate (.*?)$`)
-		submatch := re.FindStringSubmatch(string(genCnt))
-		if len(submatch) < 2 {
-			utils.CheckErrWithStatus(errors.New("can't find generate command"))
-		}
-		originCmd := submatch[1]
-
-		_, after, found := strings.Cut(originCmd, " generate ")
-		if !found {
-			utils.CheckErrWithStatus(errors.New("can't find generate command"))
-		}
-		var cmdArgs = []string{"generate"}
-		//var cmdArgs []string
-		for _, s := range strings.Split(after, " ") {
-			if !strings.Contains(s, "schema") {
-				cmdArgs = append(cmdArgs, s)
-			}
-		}
-		//cwd, _ := os.Getwd()
-		cmdArgs = append(cmdArgs, "--target", filepath.Join(schemaDir, "schema"))
-
-		log.Println("cmdArgs: ", strings.Join(cmdArgs, " "))
-
-		command := exec.Command("ent", "generate")
-		command.Dir = schemaDir
-		command.Args = cmdArgs
-
-		command.Stdout = os.Stdout
-		command.Stderr = os.Stderr
-		err = command.Run()
-		utils.CheckErrWithStatus(err)
+		utils.Info("generate entity success")
 	},
+}
+
+// PrefixSchema add the prefix to the schema name
+func PrefixSchema(prefix string) gen.Hook {
+	return func(next gen.Generator) gen.Generator {
+		return gen.GenerateFunc(func(g *gen.Graph) error {
+			return next.Generate(g)
+		})
+	}
 }
 
 func init() {
@@ -370,7 +350,5 @@ func init() {
 	genCmd.Flags().StringP("name", "n", "", "name of gen")
 
 	genCmd.MarkFlagsRequiredTogether("type", "name")
-
-	genEntCmd.Flags().StringP("dir", "d", "./internal/data/ent", "dir of generate.go file")
 
 }
