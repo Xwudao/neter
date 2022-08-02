@@ -7,6 +7,7 @@ import (
 
 
 	"{{.ModName}}/internal/core"
+	"{{.ModName}}/internal/routes/mdw"
 )
 
 type {{.StructRouteName}} struct {
@@ -24,7 +25,21 @@ func New{{.StructRouteName}}(g *gin.Engine, conf *koanf.Koanf) *{{.StructRouteNa
 }
 
 func (r *{{.StructRouteName}}) Reg() {
-	r.g.GET("/{{.PackageName}}/{{.ToLowerCamel .Name}}", core.WrapData(r.{{.ToLowerCamel .Name}}()))
+	// r.g.GET("/{{.PackageName}}/{{.ToLowerCamel .Name}}", core.WrapData(r.{{.ToLowerCamel .Name}}()))
+
+	group := r.g.Group("/{{.PackageName}}/{{.ToLowerCamel .Name}}")
+	{
+		group.GET("", core.WrapData(r.{{.ToLowerCamel .Name}}()))
+	}
+	authGroup := r.g.Group("/auth/{{.PackageName}}/{{.ToLowerCamel .Name}}").Use(mdw.MustLoginMiddleware())
+	{
+		// authGroup.GET("/auth", core.WrapData(r.{{.ToLowerCamel .Name}}()))
+		_ = authGroup
+	}
+	adminGroup := r.g.Group("/admin/{{.PackageName}}/{{.ToLowerCamel .Name}}").Use(mdw.MustWithRoleMiddleware("admin"))
+	{
+		_ = adminGroup
+	}
 }
 
 
