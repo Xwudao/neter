@@ -14,8 +14,10 @@ import (
 	"go/token"
 	"os"
 	"path/filepath"
+	"strings"
 	"text/template"
 
+	"entgo.io/ent/dialect/entsql"
 	"entgo.io/ent/entc"
 	"entgo.io/ent/entc/gen"
 	"entgo.io/ent/schema/field"
@@ -23,6 +25,7 @@ import (
 	"github.com/spf13/cobra"
 	"golang.org/x/tools/go/ast/astutil"
 
+	"github.com/Xwudao/neter-template/pkg/config"
 	"github.com/Xwudao/neter/internal/tpl"
 	"github.com/Xwudao/neter/internal/visitor"
 	"github.com/Xwudao/neter/pkg/utils"
@@ -309,11 +312,19 @@ var genEntCmd = &cobra.Command{
 	Short: "generate entity",
 	Long:  `generate entity`,
 	Run: func(cmd *cobra.Command, args []string) {
+		koanf, err := config.NewConfig()
+		utils.CheckErrWithStatus(err)
+
+		prefix, _ := cmd.Flags().GetString("prefix")
+		if prefix == "" {
+			prefix = koanf.String("db.tablePrefix")
+		}
+
 		cwd, _ := os.Getwd()
 		schemaPath := filepath.Join(cwd, "internal/data//ent/schema")
-		err := entc.Generate(schemaPath, &gen.Config{
+		err = entc.Generate(schemaPath, &gen.Config{
 			Hooks: []gen.Hook{
-				PrefixSchema("Prefix"),
+				PrefixSchema(prefix),
 			},
 			IDType:   &field.TypeInfo{Type: field.TypeInt64},
 			Features: []gen.Feature{gen.FeatureVersionedMigration, gen.FeatureModifier},
@@ -328,6 +339,19 @@ var genEntCmd = &cobra.Command{
 func PrefixSchema(prefix string) gen.Hook {
 	return func(next gen.Generator) gen.Generator {
 		return gen.GenerateFunc(func(g *gen.Graph) error {
+			if prefix == "" {
+				return next.Generate(g)
+			}
+			if !strings.HasSuffix(prefix, "_") {
+				prefix += "_"
+			}
+			for _, n := range g.Nodes {
+				a := &entsql.Annotation{Table: fmt.Sprintf("%s%s", strcase.ToSnake(prefix), n.Table())}
+				if n.Annotations == nil {
+					n.Annotations = gen.Annotations{}
+				}
+				n.Annotations[a.Name()] = a
+			}
 			return next.Generate(g)
 		})
 	}
@@ -350,5 +374,7 @@ func init() {
 	genCmd.Flags().StringP("name", "n", "", "name of gen")
 
 	genCmd.MarkFlagsRequiredTogether("type", "name")
+
+	genEntCmd.Flags().StringP("prefix", "p", "", "prefix of entity")
 
 }
