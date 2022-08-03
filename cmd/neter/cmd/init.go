@@ -26,7 +26,8 @@ import (
 )
 
 const (
-	gitUrl = "git@github.com:Xwudao/neter-template.git"
+	gitUrl  = "git@github.com:Xwudao/neter-template.git"
+	httpUrl = "https://github.com/Xwudao/neter-template.git"
 )
 
 // initCmd represents the init command
@@ -36,7 +37,8 @@ var initCmd = &cobra.Command{
 	Long:  `You can use this command fork a new project from our template.`,
 	Run: func(cmd *cobra.Command, args []string) {
 		newModName, _ := cmd.Flags().GetString("newMod")
-		i := NewInitProject(newModName)
+		git, _ := cmd.Flags().GetBool("git")
+		i := NewInitProject(newModName, git)
 		i.init(args)
 		i.clone()
 		i.rewriteMod()
@@ -55,10 +57,11 @@ type InitProject struct {
 
 	originModName string //eg: github.com/Xwudao/neter-template
 	newModName    string //eg: github.com/Xwudao/new-project
+	useGit        bool   //use git schema to clone project or http schema
 }
 
-func NewInitProject(newModName string) *InitProject {
-	return &InitProject{newModName: newModName}
+func NewInitProject(newModName string, git bool) *InitProject {
+	return &InitProject{newModName: newModName, useGit: git}
 }
 
 //init
@@ -80,10 +83,14 @@ func (i *InitProject) init(args []string) {
 
 //clone
 func (i *InitProject) clone() {
+	schemaUrl := httpUrl
+	if i.useGit {
+		schemaUrl = gitUrl
+	}
 	utils.Info("cloning project....")
 	utils.Info(i.projectName)
-	utils.Info(gitUrl)
-	cmd := exec.Command("git", "clone", gitUrl, i.projectName)
+	utils.Info(schemaUrl)
+	cmd := exec.Command("git", "clone", schemaUrl, i.projectName)
 	err := cmd.Run()
 	utils.CheckErrWithStatus(err)
 	utils.Info("cloned project....")
@@ -116,7 +123,7 @@ func (i *InitProject) rewriteMod() {
 	utils.CheckErrWithStatus(err)
 	utils.Info("changed mod name")
 }
-func (p *InitProject) write(filename string, node *ast.File, fset *token.FileSet) error {
+func (i *InitProject) write(filename string, node *ast.File, fset *token.FileSet) error {
 
 	var buf bytes.Buffer
 
@@ -136,11 +143,11 @@ func (p *InitProject) write(filename string, node *ast.File, fset *token.FileSet
 
 	return nil
 }
-func (p *InitProject) rmGit() {
-	gitDir := filepath.Join(p.rootPath, ".git")
+func (i *InitProject) rmGit() {
+	gitDir := filepath.Join(i.rootPath, ".git")
 	_ = os.RemoveAll(gitDir)
 }
-func (p *InitProject) parse(filename string) (*ast.File, *token.FileSet, error) {
+func (i *InitProject) parse(filename string) (*ast.File, *token.FileSet, error) {
 
 	fileSet := token.NewFileSet()
 	astFile, err := parser.ParseFile(fileSet, filename, nil, parser.ParseComments)
@@ -154,7 +161,7 @@ func (p *InitProject) parse(filename string) (*ast.File, *token.FileSet, error) 
 
 	for _, importSpec := range astFile.Imports {
 		originPath := importSpec.Path.Value
-		importSpec.Path.Value = strings.Replace(originPath, p.originModName, p.newModName, 1)
+		importSpec.Path.Value = strings.Replace(originPath, i.originModName, i.newModName, 1)
 	}
 
 	return astFile, fset, nil
@@ -178,25 +185,25 @@ func (i *InitProject) getOriginName() (name string, err error) {
 	}
 	return
 }
-func (p *InitProject) setModName() (err error) {
-	_, err = os.Stat(p.modPath)
+func (i *InitProject) setModName() (err error) {
+	_, err = os.Stat(i.modPath)
 	if err != nil {
 		return
 	}
 
-	cnt, err := ioutil.ReadFile(p.modPath)
+	cnt, err := ioutil.ReadFile(i.modPath)
 	if err != nil {
 		return
 	}
-	nCnt := strings.Replace(string(cnt), p.originModName, p.newModName, 1)
-	err = ioutil.WriteFile(p.modPath, []byte(nCnt), os.ModePerm)
+	nCnt := strings.Replace(string(cnt), i.originModName, i.newModName, 1)
+	err = ioutil.WriteFile(i.modPath, []byte(nCnt), os.ModePerm)
 	if err != nil {
 		return
 	}
 	return nil
 }
 
-func (p *InitProject) modTidy() {
+func (i *InitProject) modTidy() {
 	cmd := exec.Command("go", "mod", "tidy")
 	_ = cmd.Run()
 }
@@ -214,4 +221,5 @@ func init() {
 	// initCmd.Flags().BoolP("toggle", "t", false, "Help message for toggle")
 
 	initCmd.Flags().StringP("newMod", "m", "", "the module name/path")
+	initCmd.Flags().BoolP("git", "g", false, "use git method or http method")
 }
