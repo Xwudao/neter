@@ -1,6 +1,5 @@
 /*
 Copyright © 2022 NAME HERE <EMAIL ADDRESS>
-
 */
 package cmd
 
@@ -14,6 +13,7 @@ import (
 	"os"
 	"os/exec"
 	"os/signal"
+	"path/filepath"
 	"runtime"
 	"strings"
 	"syscall"
@@ -79,7 +79,9 @@ var runCmd = &cobra.Command{
 			}
 		}
 
-		runCmd := exec.Command(name, append(args, innerArgs...)...)
+		appPath, _ := filepath.Abs(name)
+
+		runCmd := exec.Command(appPath, append(args, innerArgs...)...)
 		stdOutPipe, _ := runCmd.StdoutPipe()
 		stdErrPipe, _ := runCmd.StderrPipe()
 		if err := runCmd.Start(); err != nil {
