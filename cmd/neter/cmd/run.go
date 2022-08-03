@@ -13,12 +13,12 @@ import (
 	"os"
 	"os/exec"
 	"os/signal"
-	"path/filepath"
 	"runtime"
 	"strings"
 	"syscall"
 	"time"
 
+	"github.com/Xwudao/neter/pkg/proc"
 	"github.com/spf13/cobra"
 )
 
@@ -79,7 +79,8 @@ var runCmd = &cobra.Command{
 			}
 		}
 
-		appPath, _ := filepath.Abs(name)
+		//appPath, _ := filepath.Abs(name)
+		appPath := proc.SearchBinary(name)
 
 		runCmd := exec.Command(appPath, append(args, innerArgs...)...)
 		stdOutPipe, _ := runCmd.StdoutPipe()
