@@ -9,6 +9,8 @@ import (
 	"github.com/Xwudao/neter/pkg/filex"
 )
 
+// those functions copy from https://github.com/gogf/gf
+
 func GetShell() string {
 	switch runtime.GOOS {
 	case "windows":

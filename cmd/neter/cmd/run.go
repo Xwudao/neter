@@ -18,8 +18,9 @@ import (
 	"syscall"
 	"time"
 
-	"github.com/Xwudao/neter/pkg/proc"
 	"github.com/spf13/cobra"
+
+	"github.com/Xwudao/neter/pkg/proc"
 )
 
 // runCmd represents the run command
