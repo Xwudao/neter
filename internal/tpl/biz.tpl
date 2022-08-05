@@ -1,4 +1,4 @@
-{{- /*gotype: github.com/Xwudao/neter/cmd/neter/cmd.GenerateRoute*/ -}}
+{{- /*gotype: github.com/Xwudao/nr/cmd/nr/cmd.GenerateRoute*/ -}}
 package {{.PackageName}}
 
 type {{.StructBizName}} struct {

@@ -1,6 +1,5 @@
 /*
 Copyright © 2022 NAME HERE <EMAIL ADDRESS>
-
 */
 package cmd
 
@@ -26,7 +25,7 @@ import (
 )
 
 const (
-	gitUrl  = "git@github.com:Xwudao/neter-template.git"
+	gitUrl  = "git@github.com:Xwudao/nr-template.git"
 	httpUrl = "https://github.com/Xwudao/neter-template.git"
 )
 
@@ -64,7 +63,7 @@ func NewInitProject(newModName string, git bool) *InitProject {
 	return &InitProject{newModName: newModName, useGit: git}
 }
 
-//init
+// init
 func (i *InitProject) init(args []string) {
 	if len(args) == 0 {
 		utils.CheckErrWithStatus(errors.New("please input the project name"))
@@ -81,7 +80,7 @@ func (i *InitProject) init(args []string) {
 	}
 }
 
-//clone
+// clone
 func (i *InitProject) clone() {
 	schemaUrl := httpUrl
 	if i.useGit {

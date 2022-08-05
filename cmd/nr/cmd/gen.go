@@ -1,6 +1,5 @@
 /*
 Copyright © 2022 NAME HERE <EMAIL ADDRESS>
-
 */
 package cmd
 
@@ -34,8 +33,8 @@ import (
 // genCmd represents the gen command
 var genCmd = &cobra.Command{
 	Use:   "gen",
-	Short: "gen some for neter",
-	Long:  `gen route, service, or other things for neter`,
+	Short: "gen some for nr",
+	Long:  `gen route, service, or other things for nr`,
 	Run: func(cmd *cobra.Command, args []string) {
 		tpe, _ := cmd.Flags().GetString("type")
 		name, _ := cmd.Flags().GetString("name")
@@ -203,7 +202,7 @@ func (g *GenerateRoute) updateRoot() {
 	utils.Info("updating root.go success")
 }
 
-//update biz provider
+// update biz provider
 func (g *GenerateRoute) updateBizProvider() {
 	utils.Info("updating provider.go")
 	rootFilePath := filepath.Join(g.RootPath, "provider.go")
@@ -229,7 +228,7 @@ func (g *GenerateRoute) updateBizProvider() {
 	utils.Info("updating provider.go success")
 }
 
-//update repo provider
+// update repo provider
 func (g *GenerateRoute) updateRepoProvider() {
 	utils.Info("updating provider.go")
 	rootFilePath := filepath.Join(filepath.Dir(g.RootPath), "data", "provider.go")
@@ -255,7 +254,7 @@ func (g *GenerateRoute) updateRepoProvider() {
 	utils.Info("updating provider.go success")
 }
 
-//update route provider
+// update route provider
 func (g *GenerateRoute) updateRouteProvider() {
 	utils.Info("updating provider.go")
 	rootFilePath := filepath.Join(filepath.Dir(g.RootPath), "provider.go")
