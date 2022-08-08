@@ -11,6 +11,7 @@ import (
 	"go/format"
 	"go/parser"
 	"go/token"
+	"log"
 	"os"
 	"path/filepath"
 	"strings"
@@ -311,6 +312,9 @@ var genEntCmd = &cobra.Command{
 	Short: "generate entity",
 	Long:  `generate entity`,
 	Run: func(cmd *cobra.Command, args []string) {
+		featureArr, _ := cmd.Flags().GetStringSlice("feature")
+		idType, _ := cmd.Flags().GetString("idtype")
+		log.SetPrefix("[gen] ")
 		koanf, err := config.NewConfig()
 		utils.CheckErrWithStatus(err)
 
@@ -320,17 +324,49 @@ var genEntCmd = &cobra.Command{
 		}
 
 		cwd, _ := os.Getwd()
-		schemaPath := filepath.Join(cwd, "internal/data//ent/schema")
-		err = entc.Generate(schemaPath, &gen.Config{
+		schemaPath := filepath.Join(cwd, "internal/data/ent/schema")
+
+		var features []gen.Feature
+		for _, feature := range featureArr {
+			switch feature {
+			case "schema/snapshot":
+				features = append(features, gen.FeatureSnapshot)
+			case "sql/modifier":
+				features = append(features, gen.FeatureModifier)
+			case "sql/versioned-migration":
+				features = append(features, gen.FeatureVersionedMigration)
+			case "privacy":
+				features = append(features, gen.FeaturePrivacy)
+			case "entql":
+				features = append(features, gen.FeatureEntQL)
+			case "sql/schemaconfig":
+				features = append(features, gen.FeatureSchemaConfig)
+			case "sql/lock":
+				features = append(features, gen.FeatureLock)
+			case "sql/execquery":
+				features = append(features, gen.FeatureExecQuery)
+			case "sql/upsert":
+				features = append(features, gen.FeatureUpsert)
+			case "namedges":
+			}
+		}
+
+		log.Println("features:", featureArr)
+
+		cfg := &gen.Config{
 			Hooks: []gen.Hook{
 				PrefixSchema(prefix),
 			},
-			IDType:   &field.TypeInfo{Type: field.TypeInt64},
-			Features: []gen.Feature{gen.FeatureVersionedMigration, gen.FeatureModifier},
-		})
+			Features: features,
+		}
+		if idType == "int64" {
+			log.Printf("id type: %s\n", idType)
+			cfg.IDType = &field.TypeInfo{Type: field.TypeInt64}
+		}
+		err = entc.Generate(schemaPath, cfg)
 		utils.CheckErrWithStatus(err)
 
-		utils.Info("generate entity success")
+		log.Println("generate entity success")
 	},
 }
 
@@ -375,5 +411,7 @@ func init() {
 	genCmd.MarkFlagsRequiredTogether("type", "name")
 
 	genEntCmd.Flags().StringP("prefix", "p", "", "prefix of entity")
+	genEntCmd.Flags().StringP("idtype", "i", "int64", "id type of entity")
+	genEntCmd.Flags().StringSliceP("feature", "f", []string{"sql/modifier", "sql/versioned-migration"}, "the features of the ent for generating entity")
 
 }
