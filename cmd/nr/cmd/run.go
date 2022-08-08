@@ -13,6 +13,7 @@ import (
 	"os"
 	"os/exec"
 	"os/signal"
+	"path/filepath"
 	"runtime"
 	"strings"
 	"syscall"
@@ -20,6 +21,7 @@ import (
 
 	"github.com/spf13/cobra"
 
+	"github.com/Xwudao/neter/pkg/filex"
 	"github.com/Xwudao/neter/pkg/proc"
 )
 
@@ -33,16 +35,21 @@ var runCmd = &cobra.Command{
 		name := cmd.Flag("name").Value.String()
 		del, _ := cmd.Flags().GetBool("delete")
 		wire, _ := cmd.Flags().GetBool("wire")
+		dir, _ := cmd.Flags().GetString("dir")
 
 		if win {
 			name += ".exe"
 		}
-		mainFile := "cmd/app/main.go"
-		if _, err := os.Stat(mainFile); err != nil {
+		appRoot := filepath.Join("cmd", dir)
+		files := find(dir)
+		if len(files) == 0 {
 			log.Fatalf("please run in root project directory")
 			return
 		}
-		wireFile := "cmd/app/wire_gen.go"
+		//mainFile := "cmd/app/main.go"
+		//if _, err := os.Stat(mainFile); err != nil {
+		//}
+		//wireFile := "cmd/app/wire_gen.go"
 
 		log.SetPrefix("[run] ")
 
@@ -52,7 +59,7 @@ var runCmd = &cobra.Command{
 		)
 		if wire {
 			log.Println("generating wire...")
-			if res, err = run("wire", "gen", "./cmd/app/"); err != nil {
+			if res, err = runWithDir("wire", appRoot, "gen"); err != nil {
 				log.Println(res)
 				log.Fatalf("wire gen error: %v", err)
 				return
@@ -62,7 +69,9 @@ var runCmd = &cobra.Command{
 		}
 
 		log.Println("generating app...")
-		if res, err = run("go", "build", "-o", name, mainFile, wireFile); err != nil {
+		var buildArgs = []string{"build", "-o", name}
+		buildArgs = append(buildArgs, files...)
+		if res, err = run("go", buildArgs...); err != nil {
 			log.Println(res)
 			log.Fatalf("go build error: %v", err)
 			return
@@ -144,8 +153,13 @@ func write(ctx context.Context, cancel context.CancelFunc, rd io.Reader) {
 }
 
 func run(name string, args ...string) (string, error) {
+	return runWithDir(name, "", args...)
+}
+func runWithDir(name string, dir string, args ...string) (string, error) {
 	cmd := exec.Command(name, args...)
-
+	if dir != "" {
+		cmd.Dir = dir
+	}
 	var stdout, stderr bytes.Buffer
 	cmd.Stdout = &stdout
 	cmd.Stderr = &stderr
@@ -154,6 +168,22 @@ func run(name string, args ...string) (string, error) {
 		return stderr.String(), err
 	}
 	return stdout.String(), nil
+}
+
+func find(dir string) (files []string) {
+	fp := filepath.Join("cmd", dir)
+	files, err := filex.LoadFiles(fp, func(s string) bool {
+		v := filepath.Ext(s) == ".go"
+		file, err := os.ReadFile(s)
+		if err != nil {
+			return false
+		}
+		return !strings.Contains(string(file), "+build wireinject") && v
+	})
+	if err == nil {
+		return
+	}
+	return nil
 }
 
 func init() {
@@ -169,6 +199,7 @@ func init() {
 	// is called directly, e.g.:
 	// runCmd.Flags().BoolP("toggle", "t", false, "Help message for toggle")
 
+	runCmd.Flags().String("dir", "app", "the directory of the application")
 	runCmd.Flags().StringP("name", "n", "main", "the generated app name")
 	runCmd.Flags().BoolP("wire", "w", false, "generate wire file")
 	runCmd.Flags().BoolP("delete", "d", false, "delete the generated app")
