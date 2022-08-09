@@ -13,15 +13,16 @@ import (
 	"os"
 	"os/exec"
 	"os/signal"
+	"path"
 	"path/filepath"
 	"runtime"
 	"strings"
 	"syscall"
 	"time"
 
+	"github.com/AlecAivazis/survey/v2"
 	"github.com/spf13/cobra"
 
-	"github.com/Xwudao/neter/pkg/filex"
 	"github.com/Xwudao/neter/pkg/proc"
 )
 
@@ -40,12 +41,15 @@ var runCmd = &cobra.Command{
 		if win {
 			name += ".exe"
 		}
-		appRoot := filepath.Join("cmd", dir)
-		files := find(dir)
-		if len(files) == 0 {
-			log.Fatalf("please run in root project directory")
-			return
-		}
+		//appRoot := filepath.Join("cmd", dir)
+		//if _, err := os.Stat(appRoot); err != nil {
+		//}
+
+		//files := find(dir)
+		//if len(files) == 0 {
+		//	log.Fatalf("please run in root project directory")
+		//	return
+		//}
 		//mainFile := "cmd/app/main.go"
 		//if _, err := os.Stat(mainFile); err != nil {
 		//}
@@ -57,20 +61,52 @@ var runCmd = &cobra.Command{
 			res string
 			err error
 		)
+		cmdPath, err := find("cmd")
+		if err != nil {
+			log.Fatalf(err.Error())
+			return
+		}
+		var appRoot string
+		switch len(cmdPath) {
+		case 0:
+			log.Fatalf("please run in root project directory")
+		case 1:
+			for _, v := range cmdPath {
+				appRoot = v
+			}
+		default:
+			var cmdPaths []string
+			for k := range cmdPath {
+				cmdPaths = append(cmdPaths, k)
+			}
+			prompt := &survey.Select{
+				Message:  "Which directory do you want to run?",
+				Options:  cmdPaths,
+				PageSize: 10,
+			}
+			e := survey.AskOne(prompt, &dir)
+			if e != nil || dir == "" {
+				return
+			}
+			appRoot = cmdPath[dir]
+		}
+		var buildPath = fmt.Sprintf("./%s/", appRoot)
+
+		// generate wire
 		if wire {
 			log.Println("generating wire...")
-			if res, err = runWithDir("wire", appRoot, "gen"); err != nil {
+			if res, err = runWithDir("wire", buildPath, "gen"); err != nil {
 				log.Println(res)
 				log.Fatalf("wire gen error: %v", err)
 				return
 			}
 			log.Println(res)
-
 		}
 
+		//generate app
 		log.Println("generating app...")
 		var buildArgs = []string{"build", "-o", name}
-		buildArgs = append(buildArgs, files...)
+		buildArgs = append(buildArgs, buildPath)
 		if res, err = run("go", buildArgs...); err != nil {
 			log.Println(res)
 			log.Fatalf("go build error: %v", err)
@@ -78,6 +114,7 @@ var runCmd = &cobra.Command{
 		}
 		log.Println(res)
 
+		// run generate app's command
 		var innerArgs []string
 		if len(args) > 1 {
 			for _, arg := range args[1:] {
@@ -89,14 +126,12 @@ var runCmd = &cobra.Command{
 			}
 		}
 
-		//appPath, _ := filepath.Abs(name)
+		// just run app
 		appPath := proc.SearchBinary(name)
-
 		runCmd := exec.Command(appPath, append(args, innerArgs...)...)
 		stdOutPipe, _ := runCmd.StdoutPipe()
 		stdErrPipe, _ := runCmd.StderrPipe()
 		if err := runCmd.Start(); err != nil {
-			// handle error
 			log.Fatalf("failed to start cmd: %v", err)
 		}
 
@@ -170,20 +205,54 @@ func runWithDir(name string, dir string, args ...string) (string, error) {
 	return stdout.String(), nil
 }
 
-func find(dir string) (files []string) {
-	fp := filepath.Join("cmd", dir)
-	files, err := filex.LoadFiles(fp, func(s string) bool {
-		v := filepath.Ext(s) == ".go"
-		file, err := os.ReadFile(s)
-		if err != nil {
-			return false
-		}
-		return !strings.Contains(string(file), "+build wireinject") && v
-	})
-	if err == nil {
-		return
+func find(base string) (map[string]string, error) {
+	wd, err := os.Getwd()
+	if err != nil {
+		return nil, err
 	}
-	return nil
+	if !strings.HasSuffix(wd, "/") {
+		wd += "/"
+	}
+	var root bool
+	next := func(dir string) (map[string]string, error) {
+		cmdPath := make(map[string]string)
+		err := filepath.Walk(dir, func(walkPath string, info os.FileInfo, err error) error {
+			// multi level directory is not allowed under the cmdPath directory, so it is judged that the path ends with cmdPath.
+			if strings.HasSuffix(walkPath, "cmd") {
+				paths, err := os.ReadDir(walkPath)
+				if err != nil {
+					return err
+				}
+				for _, fileInfo := range paths {
+					if fileInfo.IsDir() {
+						abs := path.Join(walkPath, fileInfo.Name())
+						cmdPath[strings.TrimPrefix(abs, wd)] = abs
+					}
+				}
+				return nil
+			}
+			if info.Name() == "go.mod" {
+				root = true
+			}
+			return nil
+		})
+		return cmdPath, err
+	}
+	for i := 0; i < 5; i++ {
+		tmp := base
+		cmd, err := next(tmp)
+		if err != nil {
+			return nil, err
+		}
+		if len(cmd) > 0 {
+			return cmd, nil
+		}
+		if root {
+			break
+		}
+		_ = filepath.Join(base, "..")
+	}
+	return map[string]string{"": base}, nil
 }
 
 func init() {
