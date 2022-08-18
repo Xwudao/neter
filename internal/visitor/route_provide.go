@@ -1,8 +1,11 @@
 package visitor
 
 import (
+	"fmt"
 	"go/ast"
 	"go/token"
+
+	"github.com/go-toolsmith/strparse"
 )
 
 type RouteProvideVisitor struct {
@@ -21,12 +24,7 @@ func (v *RouteProvideVisitor) Visit(node ast.Node) ast.Visitor {
 			specs := n.Specs[0].(*ast.ValueSpec)
 			if len(specs.Values) > 0 {
 				val := specs.Values[0].(*ast.CallExpr)
-				val.Args = append(val.Args,
-					&ast.SelectorExpr{
-						X:   ast.NewIdent(v.pkgName),
-						Sel: ast.NewIdent(v.FunName),
-					},
-				)
+				val.Args = append(val.Args, strparse.Expr(fmt.Sprintf("%s.%s", v.pkgName, v.FunName)))
 			}
 		}
 	}

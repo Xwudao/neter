@@ -6,6 +6,8 @@ require (
 	entgo.io/ent v0.11.1
 	github.com/AlecAivazis/survey/v2 v2.3.5
 	github.com/Xwudao/neter-template v0.0.0-20220809021644-7ce9592ee1a9
+	github.com/go-toolsmith/astfmt v1.0.0
+	github.com/go-toolsmith/strparse v1.0.0
 	github.com/iancoleman/strcase v0.2.0
 	github.com/knadh/koanf v1.4.2
 	github.com/spf13/cobra v1.5.0
