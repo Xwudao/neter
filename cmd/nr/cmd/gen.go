@@ -393,6 +393,9 @@ func PrefixSchema(prefix string) gen.Hook {
 }
 
 func init() {
+
+	strcase.ConfigureAcronym("neo4j", "neo4j")
+
 	genCmd.AddCommand(genEntCmd)
 	rootCmd.AddCommand(genCmd)
 
