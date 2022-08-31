@@ -104,7 +104,7 @@ func init() {
 	// buildCmd.Flags().BoolP("toggle", "t", false, "Help message for toggle")
 
 	buildCmd.Flags().BoolP("linux", "l", false, "build the linux binary")
-	buildCmd.Flags().BoolP("win", "w", true, "build the win binary")
+	buildCmd.Flags().BoolP("win", "w", false, "build the win binary")
 	buildCmd.Flags().BoolP("mac", "m", false, "build the mac binary")
 	buildCmd.Flags().String("dir", "app", "the directory of the application")
 	buildCmd.Flags().StringP("name", "n", "main", "the generated app name")
