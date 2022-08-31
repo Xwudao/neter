@@ -95,7 +95,7 @@ var runCmd = &cobra.Command{
 		// generate wire
 		if wire {
 			log.Println("generating wire...")
-			if res, err = runWithDir("wire", buildPath, "gen"); err != nil {
+			if res, err = runWithDir("wire", buildPath, nil, "gen"); err != nil {
 				log.Println(res)
 				log.Fatalf("wire gen error: %v", err)
 				return
@@ -188,12 +188,18 @@ func write(ctx context.Context, cancel context.CancelFunc, rd io.Reader) {
 }
 
 func run(name string, args ...string) (string, error) {
-	return runWithDir(name, "", args...)
+	return runWithDir(name, "", nil, args...)
 }
-func runWithDir(name string, dir string, args ...string) (string, error) {
+func runEnv(name string, env []string, args ...string) (string, error) {
+	return runWithDir(name, "", env, args...)
+}
+func runWithDir(name string, dir string, env []string, args ...string) (string, error) {
 	cmd := exec.Command(name, args...)
 	if dir != "" {
 		cmd.Dir = dir
+	}
+	if len(env) > 0 {
+		cmd.Env = append(cmd.Environ(), env...)
 	}
 	var stdout, stderr bytes.Buffer
 	cmd.Stdout = &stdout
