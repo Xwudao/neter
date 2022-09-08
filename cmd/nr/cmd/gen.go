@@ -315,7 +315,7 @@ var genEntCmd = &cobra.Command{
 		featureArr, _ := cmd.Flags().GetStringSlice("feature")
 		idType, _ := cmd.Flags().GetString("idtype")
 		log.SetPrefix("[gen] ")
-		koanf, err := config.NewConfig()
+		koanf, err := config.NewKoanf()
 		utils.CheckErrWithStatus(err)
 
 		prefix, _ := cmd.Flags().GetString("prefix")
