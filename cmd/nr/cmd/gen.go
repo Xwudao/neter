@@ -21,11 +21,11 @@ import (
 	"entgo.io/ent/entc"
 	"entgo.io/ent/entc/gen"
 	"entgo.io/ent/schema/field"
+	"github.com/Xwudao/neter/pkg/config"
 	"github.com/iancoleman/strcase"
 	"github.com/spf13/cobra"
 	"golang.org/x/tools/go/ast/astutil"
 
-	"github.com/Xwudao/neter-template/pkg/config"
 	"github.com/Xwudao/neter/internal/tpl"
 	"github.com/Xwudao/neter/internal/visitor"
 	"github.com/Xwudao/neter/pkg/utils"
@@ -315,7 +315,7 @@ var genEntCmd = &cobra.Command{
 		featureArr, _ := cmd.Flags().GetStringSlice("feature")
 		idType, _ := cmd.Flags().GetString("idtype")
 		log.SetPrefix("[gen] ")
-		koanf, err := config.NewKoanf()
+		koanf, err := config.NewConfig()
 		utils.CheckErrWithStatus(err)
 
 		prefix, _ := cmd.Flags().GetString("prefix")
