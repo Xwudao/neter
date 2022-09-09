@@ -18,6 +18,7 @@ var buildCmd = &cobra.Command{
 	Short: "build the final binary",
 	Run: func(cmd *cobra.Command, args []string) {
 		name := cmd.Flag("name").Value.String()
+		arch := cmd.Flag("arch").Value.String()
 		dir, _ := cmd.Flags().GetString("dir")
 		linux, _ := cmd.Flags().GetBool("linux")
 		mac, _ := cmd.Flags().GetBool("mac")
@@ -65,9 +66,9 @@ var buildCmd = &cobra.Command{
 			Build bool
 			Env   []string
 		}{
-			{Name: name + "-linux", Type: "linux", Build: linux, Env: []string{"GOOS=linux", "GOARCH=amd64"}},
-			{Name: name + "-mac", Type: "mac", Build: mac, Env: []string{"GOOS=darwin", "GOARCH=amd64"}},
-			{Name: name + "-win" + ".exe", Type: "win", Build: win, Env: []string{"GOOS=windows", "GOARCH=amd64"}},
+			{Name: name + "-linux", Type: "linux", Build: linux, Env: []string{"GOOS=linux", "GOARCH=" + arch}},
+			{Name: name + "-mac", Type: "mac", Build: mac, Env: []string{"GOOS=darwin", "GOARCH=" + arch}},
+			{Name: name + "-win" + ".exe", Type: "win", Build: win, Env: []string{"GOOS=windows", "GOARCH=" + arch}},
 		}
 
 		for _, c := range Config {
@@ -107,5 +108,6 @@ func init() {
 	buildCmd.Flags().BoolP("win", "w", false, "build the win binary")
 	buildCmd.Flags().BoolP("mac", "m", false, "build the mac binary")
 	buildCmd.Flags().String("dir", "app", "the directory of the application")
+	buildCmd.Flags().StringP("arch", "a", "amd64", "the architecture of the binary")
 	buildCmd.Flags().StringP("name", "n", "main", "the generated app name")
 }
