@@ -41,19 +41,6 @@ var runCmd = &cobra.Command{
 		if win {
 			name += ".exe"
 		}
-		//appRoot := filepath.Join("cmd", dir)
-		//if _, err := os.Stat(appRoot); err != nil {
-		//}
-
-		//files := find(dir)
-		//if len(files) == 0 {
-		//	log.Fatalf("please run in root project directory")
-		//	return
-		//}
-		//mainFile := "cmd/app/main.go"
-		//if _, err := os.Stat(mainFile); err != nil {
-		//}
-		//wireFile := "cmd/app/wire_gen.go"
 
 		log.SetPrefix("[run] ")
 
