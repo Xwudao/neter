@@ -10,3 +10,6 @@ var BizTpl string
 
 //go:embed repo.tpl
 var RepoTpl string
+
+//go:embed cmd.tpl
+var CmdTpl string

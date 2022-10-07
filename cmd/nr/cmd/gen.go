@@ -76,16 +76,16 @@ type GenerateRoute struct {
 	FilenameBizSuffix   string
 	FilenameRepoSuffix  string
 
-	saveRouteFilePath string //eg: home_route.go
-	saveBizFilePath   string //eg: home_biz.go
-	saveRepoFilePath  string //eg: home_repo.go
+	saveRouteFilePath string // eg: home_route.go
+	saveBizFilePath   string // eg: home_biz.go
+	saveRepoFilePath  string // eg: home_repo.go
 
-	Name     string //eg: home
-	TypeName string //eg: route, service, etc
+	Name     string // eg: home
+	TypeName string // eg: route, service, etc
 
-	StructRouteName string //eg: HomeRoute
-	StructBizName   string //eg: HomeBiz
-	StructRepoName  string //eg: HomeRepo
+	StructRouteName string // eg: HomeRoute
+	StructBizName   string // eg: HomeBiz
+	StructRepoName  string // eg: HomeRepo
 }
 
 func NewGenerate(name string, typeName string) *GenerateRoute {
@@ -183,16 +183,16 @@ func (g *GenerateRoute) updateRoot() {
 	f, err := parser.ParseFile(fset, rootFilePath, nil, 0)
 	utils.CheckErrWithStatus(err)
 
-	//update content
+	// update content
 	walker := visitor.NewUpdateRoot(fmt.Sprintf("%s%s", g.PackageName, g.StructRouteName), fmt.Sprintf("*%s.%s", g.PackageName, g.StructRouteName))
 	ast.Walk(walker, f)
 
-	//update imports
+	// update imports
 	pkgName := fmt.Sprintf("%s/internal/routes/%s", g.ModName, g.PackageName)
 	_ = astutil.AddNamedImport(fset, f, g.PackageName, pkgName)
-	//if !added {
+	// if !added {
 	//	utils.CheckErrWithStatus(fmt.Errorf("can't add import [%s]", pkgName))
-	//}
+	// }
 
 	var dst bytes.Buffer
 	err = format.Node(&dst, fset, f)
@@ -216,7 +216,7 @@ func (g *GenerateRoute) updateBizProvider() {
 	f, err := parser.ParseFile(fset, rootFilePath, nil, 0)
 	utils.CheckErrWithStatus(err)
 
-	//update content
+	// update content
 	walker := visitor.NewCurrentProvideVisitor(fmt.Sprintf("New%s", g.StructBizName))
 	ast.Walk(walker, f)
 
@@ -242,7 +242,7 @@ func (g *GenerateRoute) updateRepoProvider() {
 	f, err := parser.ParseFile(fset, rootFilePath, nil, 0)
 	utils.CheckErrWithStatus(err)
 
-	//update content
+	// update content
 	walker := visitor.NewCurrentProvideVisitor(fmt.Sprintf("New%s", g.StructRepoName))
 	ast.Walk(walker, f)
 
@@ -268,16 +268,16 @@ func (g *GenerateRoute) updateRouteProvider() {
 	f, err := parser.ParseFile(fset, rootFilePath, nil, 0)
 	utils.CheckErrWithStatus(err)
 
-	//update content
+	// update content
 	walker := visitor.NewRouteProvideVisitor(g.PackageName, fmt.Sprintf("New%s", g.StructRouteName))
 	ast.Walk(walker, f)
 
-	//update imports
+	// update imports
 	pkgName := fmt.Sprintf("%s/internal/routes/%s", g.ModName, g.PackageName)
 	_ = astutil.AddNamedImport(fset, f, g.PackageName, pkgName)
-	//if !added {
+	// if !added {
 	//	utils.CheckErrWithStatus(fmt.Errorf("can't add import [%s]", pkgName))
-	//}
+	// }
 
 	var dst bytes.Buffer
 	err = format.Node(&dst, fset, f)
@@ -295,7 +295,7 @@ func (g *GenerateRoute) checkFile(p string) {
 	}
 }
 
-//template functions
+// template functions
 
 func (g *GenerateRoute) ToLowerCamel(str string) string {
 	return strcase.ToLowerCamel(str)
@@ -392,11 +392,71 @@ func PrefixSchema(prefix string) gen.Hook {
 	}
 }
 
+var genCmdCmd = &cobra.Command{
+	Use:   "cmd",
+	Short: "generate command",
+	Long:  `generate command`,
+	Run: func(cmd *cobra.Command, args []string) {
+		name, _ := cmd.Flags().GetString("name")
+		modPath, err := utils.FindModPath(3)
+		utils.CheckErrWithStatus(err)
+
+		NewGenSubCmd(name, modPath).Gen()
+
+	},
+}
+
+type GenSubCmd struct {
+	Name       string
+	ModPath    string // root path
+	StructName string // eg: HelloYouCmd
+	KebabName  string // eg: hello-you
+}
+
+func NewGenSubCmd(name string, modPath string) *GenSubCmd {
+	return &GenSubCmd{Name: name, ModPath: modPath}
+}
+
+func (g *GenSubCmd) Gen() {
+	log.SetPrefix("[gen] ")
+	log.Println("generate command: ", g.Name)
+	g.checkFile()
+	g.genCmd()
+}
+
+func (g *GenSubCmd) checkFile() {
+	snakeName := strcase.ToSnake(g.Name)
+	cmdPath := filepath.Join(g.ModPath, "internal/cmd", snakeName+".go")
+	if _, err := os.Stat(cmdPath); err == nil {
+		utils.CheckErrWithStatus(errors.New("file already exists"))
+		return
+	}
+}
+
+func (g *GenSubCmd) genCmd() {
+	g.StructName = strcase.ToCamel(g.Name) + "Cmd"
+	g.KebabName = strcase.ToKebab(g.Name)
+	savePath := filepath.Join(g.ModPath, "internal/cmd", g.KebabName+".go")
+
+	parse, err := template.New("cmd").Parse(tpl.CmdTpl)
+	utils.CheckErrWithStatus(err)
+
+	buffer := bytes.NewBuffer([]byte{})
+	err = parse.Execute(buffer, g)
+	utils.CheckErrWithStatus(err)
+
+	source, err := format.Source(buffer.Bytes())
+	utils.CheckErrWithStatus(err)
+
+	err = utils.SaveToFile(savePath, source, false)
+	utils.CheckErrWithStatus(err)
+}
+
 func init() {
 
 	strcase.ConfigureAcronym("neo4j", "neo4j")
 
-	genCmd.AddCommand(genEntCmd)
+	genCmd.AddCommand(genEntCmd, genCmdCmd)
 	rootCmd.AddCommand(genCmd)
 
 	// Here you will define your flags and configuration settings.
@@ -416,5 +476,8 @@ func init() {
 	genEntCmd.Flags().StringP("prefix", "p", "", "prefix of entity")
 	genEntCmd.Flags().StringP("idtype", "i", "int64", "id type of entity")
 	genEntCmd.Flags().StringSliceP("feature", "f", []string{"sql/modifier", "sql/versioned-migration"}, "the features of the ent for generating entity")
+
+	genCmdCmd.Flags().StringP("name", "n", "", "name of gen")
+	_ = genCmdCmd.MarkFlagRequired("name")
 
 }
