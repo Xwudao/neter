@@ -23,7 +23,7 @@ var buildCmd = &cobra.Command{
 		linux, _ := cmd.Flags().GetBool("linux")
 		mac, _ := cmd.Flags().GetBool("mac")
 		win, _ := cmd.Flags().GetBool("win")
-		// output, _ := cmd.Flags().GetString("output")
+		output, _ := cmd.Flags().GetString("output")
 
 		log.SetPrefix("[build] ")
 		var (
@@ -72,12 +72,23 @@ var buildCmd = &cobra.Command{
 			{Name: name + "-win" + ".exe", Type: "win", Build: win, Env: []string{"GOOS=windows", "GOARCH=" + arch}},
 		}
 
+		// compute how many binaries to build
+		var buildNum int
+		for _, c := range Config {
+			if c.Build {
+				buildNum++
+			}
+		}
+
 		for _, c := range Config {
 			if c.Build {
 				// generate app
 				log.Println(fmt.Sprintf("building [%s] app", c.Type))
 				// var buildStr = fmt.Sprintf(`build -trimpath -ldflags "-s -w -extldflags '-static'" -o %s %s`, c.Name, buildPath)
 				// buildArgs, err := windows.DecomposeCommandLine(buildStr)
+				if buildNum == 1 && output != "" {
+					c.Name = output
+				}
 				var buildArgs = []string{"build", "-trimpath", `-ldflags=-s -w -extldflags '-static'`, "-o", c.Name}
 				buildArgs = append(buildArgs, buildPath)
 				fmt.Println(buildArgs)
@@ -119,5 +130,5 @@ func init() {
 	buildCmd.Flags().String("dir", "app", "the directory of the application")
 	buildCmd.Flags().StringP("arch", "a", "amd64", "the architecture of the binary")
 	buildCmd.Flags().StringP("name", "n", "main", "the generated app name")
-	buildCmd.Flags().StringP("output", "o", "", "the output filename")
+	buildCmd.Flags().StringP("output", "o", "", "the output filename, this option only works when building one binary")
 }
