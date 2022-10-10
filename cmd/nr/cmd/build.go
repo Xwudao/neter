@@ -6,10 +6,10 @@ package cmd
 import (
 	"fmt"
 	"log"
+	"strings"
 
 	"github.com/AlecAivazis/survey/v2"
 	"github.com/spf13/cobra"
-	"golang.org/x/sys/windows"
 )
 
 // buildCmd represents the build command
@@ -76,16 +76,17 @@ var buildCmd = &cobra.Command{
 			if c.Build {
 				// generate app
 				log.Println(fmt.Sprintf("building [%s] app", c.Type))
-				var buildStr = fmt.Sprintf(`build -trimpath -ldflags "-s -w -extldflags '-static'" -o %s %s`, c.Name, buildPath)
-				buildArgs, err := windows.DecomposeCommandLine(buildStr)
-				// buildArgs := utils.ParseArgsString(buildStr)
+				// var buildStr = fmt.Sprintf(`build -trimpath -ldflags "-s -w -extldflags '-static'" -o %s %s`, c.Name, buildPath)
+				// buildArgs, err := windows.DecomposeCommandLine(buildStr)
+				var buildArgs = []string{"build", "-trimpath", `-ldflags=-s -w -extldflags '-static'`, "-o", c.Name}
+				buildArgs = append(buildArgs, buildPath)
 				fmt.Println(buildArgs)
 
 				if err != nil {
 					log.Fatalf(err.Error())
 					return
 				}
-				log.Println("build args: ", buildStr)
+				log.Println("build args: ", strings.Join(buildArgs, " "))
 
 				if res, err = runEnv("go", c.Env, buildArgs...); err != nil {
 					log.Println(res)
