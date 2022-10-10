@@ -23,6 +23,7 @@ var buildCmd = &cobra.Command{
 		linux, _ := cmd.Flags().GetBool("linux")
 		mac, _ := cmd.Flags().GetBool("mac")
 		win, _ := cmd.Flags().GetBool("win")
+		// output, _ := cmd.Flags().GetString("output")
 
 		log.SetPrefix("[build] ")
 		var (
@@ -73,10 +74,13 @@ var buildCmd = &cobra.Command{
 
 		for _, c := range Config {
 			if c.Build {
-				//generate app
+				// generate app
 				log.Println(fmt.Sprintf("building [%s] app", c.Type))
 				var buildStr = fmt.Sprintf(`build -trimpath -ldflags "-s -w -extldflags '-static'" -o %s %s`, c.Name, buildPath)
 				buildArgs, err := windows.DecomposeCommandLine(buildStr)
+				// buildArgs := utils.ParseArgsString(buildStr)
+				fmt.Println(buildArgs)
+
 				if err != nil {
 					log.Fatalf(err.Error())
 					return
@@ -114,4 +118,5 @@ func init() {
 	buildCmd.Flags().String("dir", "app", "the directory of the application")
 	buildCmd.Flags().StringP("arch", "a", "amd64", "the architecture of the binary")
 	buildCmd.Flags().StringP("name", "n", "main", "the generated app name")
+	buildCmd.Flags().StringP("output", "o", "", "the output filename")
 }
