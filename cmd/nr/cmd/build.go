@@ -24,6 +24,7 @@ var buildCmd = &cobra.Command{
 		mac, _ := cmd.Flags().GetBool("mac")
 		win, _ := cmd.Flags().GetBool("win")
 		output, _ := cmd.Flags().GetString("output")
+		dlv, _ := cmd.Flags().GetBool("dlv")
 
 		log.SetPrefix("[build] ")
 		var (
@@ -89,7 +90,14 @@ var buildCmd = &cobra.Command{
 				if buildNum == 1 && output != "" {
 					c.Name = output
 				}
-				var buildArgs = []string{"build", "-trimpath", `-ldflags=-s -w -extldflags '-static'`, "-o", c.Name}
+				var buildArgs = []string{"build", "-trimpath"}
+				if dlv {
+					buildArgs = append(buildArgs, `-gcflags=all=-N -l`)
+				} else {
+					buildArgs = append(buildArgs, "-ldflags=-s -w -extldflags '-static'")
+				}
+				// var buildArgs = []string{"build", "-trimpath", `-ldflags=-s -w -extldflags '-static'`, "-o", c.Name}
+				buildArgs = append(buildArgs, "-o", c.Name)
 				buildArgs = append(buildArgs, buildPath)
 				fmt.Println(buildArgs)
 
@@ -105,6 +113,12 @@ var buildCmd = &cobra.Command{
 					return
 				}
 				log.Println(res)
+
+				if dlv {
+					log.Println("now, you can debug with dlv: ")
+					log.Println(fmt.Sprintf(`dlv --listen=:2345 --headless=true --api-version=2 --accept-multiclient exec ./%s`, c.Name))
+
+				}
 			}
 		}
 
@@ -131,4 +145,5 @@ func init() {
 	buildCmd.Flags().StringP("arch", "a", "amd64", "the architecture of the binary")
 	buildCmd.Flags().StringP("name", "n", "main", "the generated app name")
 	buildCmd.Flags().StringP("output", "o", "", "the output filename, this option only works when building one binary")
+	buildCmd.Flags().Bool("dlv", false, "generate binary app can be debugged by dlv")
 }

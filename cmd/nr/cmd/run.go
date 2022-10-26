@@ -90,7 +90,7 @@ var runCmd = &cobra.Command{
 			log.Println(res)
 		}
 
-		//generate app
+		// generate app
 		log.Println("generating app...")
 		var buildArgs = []string{"build", "-o", name}
 		buildArgs = append(buildArgs, buildPath)
