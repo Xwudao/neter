@@ -108,11 +108,11 @@ var buildCmd = &cobra.Command{
 				log.Println("build args: ", strings.Join(buildArgs, " "))
 
 				if res, err = runEnv("go", c.Env, buildArgs...); err != nil {
-					log.Println(res)
+					log.Println("\n" + res)
 					log.Fatalf("go build error: %v", err)
 					return
 				}
-				log.Println(res)
+				log.Println("\n" + res)
 
 				if dlv {
 					log.Println("now, you can debug with dlv: ")

@@ -83,7 +83,7 @@ var runCmd = &cobra.Command{
 		if wire {
 			log.Println("generating wire...")
 			if res, err = runWithDir("wire", buildPath, nil, "gen"); err != nil {
-				log.Println(res)
+				log.Println("\n" + res)
 				log.Fatalf("wire gen error: %v", err)
 				return
 			}
@@ -95,7 +95,7 @@ var runCmd = &cobra.Command{
 		var buildArgs = []string{"build", "-o", name}
 		buildArgs = append(buildArgs, buildPath)
 		if res, err = run("go", buildArgs...); err != nil {
-			log.Println(res)
+			log.Println("\n" + res)
 			log.Fatalf("go build error: %v", err)
 			return
 		}
