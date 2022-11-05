@@ -18,10 +18,7 @@ import (
 	"text/template"
 
 	"entgo.io/ent/dialect/entsql"
-	"entgo.io/ent/entc"
 	"entgo.io/ent/entc/gen"
-	"entgo.io/ent/schema/field"
-	"github.com/Xwudao/neter/pkg/config"
 	"github.com/iancoleman/strcase"
 	"github.com/spf13/cobra"
 	"golang.org/x/tools/go/ast/astutil"
@@ -312,59 +309,79 @@ var genEntCmd = &cobra.Command{
 	Short: "generate entity",
 	Long:  `generate entity`,
 	Run: func(cmd *cobra.Command, args []string) {
-		featureArr, _ := cmd.Flags().GetStringSlice("feature")
-		idType, _ := cmd.Flags().GetString("idtype")
 		log.SetPrefix("[gen] ")
-		koanf, err := config.NewConfig()
+		dir, _ := os.Getwd()
+
+		aimPath := filepath.Join(dir, "internal", "data")
+		stat, err := os.Stat(aimPath)
+		if err != nil || !stat.IsDir() {
+			log.Println("please run in root project")
+			log.Fatalf("can't find data dir [%s]\n", aimPath)
+		}
+
+		env := os.Environ()
+		runArgs := []string{"generate", "./ent", "-run", "entgo.io/ent/cmd/ent"}
+		log.Println("run args: ", strings.Join(runArgs, " "))
+
+		res, err := runWithDir("go", aimPath, env, runArgs...)
+
 		utils.CheckErrWithStatus(err)
 
-		prefix, _ := cmd.Flags().GetString("prefix")
-		if prefix == "" {
-			prefix = koanf.String("db.tablePrefix")
-		}
+		log.Println(res)
 
-		cwd, _ := os.Getwd()
-		schemaPath := filepath.Join(cwd, "internal/data/ent/schema")
-
-		var features []gen.Feature
-		for _, feature := range featureArr {
-			switch feature {
-			case "schema/snapshot":
-				features = append(features, gen.FeatureSnapshot)
-			case "sql/modifier":
-				features = append(features, gen.FeatureModifier)
-			case "sql/versioned-migration":
-				features = append(features, gen.FeatureVersionedMigration)
-			case "privacy":
-				features = append(features, gen.FeaturePrivacy)
-			case "entql":
-				features = append(features, gen.FeatureEntQL)
-			case "sql/schemaconfig":
-				features = append(features, gen.FeatureSchemaConfig)
-			case "sql/lock":
-				features = append(features, gen.FeatureLock)
-			case "sql/execquery":
-				features = append(features, gen.FeatureExecQuery)
-			case "sql/upsert":
-				features = append(features, gen.FeatureUpsert)
-			case "namedges":
-			}
-		}
-
-		log.Println("features:", featureArr)
-
-		cfg := &gen.Config{
-			Hooks: []gen.Hook{
-				PrefixSchema(prefix),
-			},
-			Features: features,
-		}
-		if idType == "int64" {
-			log.Printf("id type: %s\n", idType)
-			cfg.IDType = &field.TypeInfo{Type: field.TypeInt64}
-		}
-		err = entc.Generate(schemaPath, cfg)
-		utils.CheckErrWithStatus(err)
+		// featureArr, _ := cmd.Flags().GetStringSlice("feature")
+		// idType, _ := cmd.Flags().GetString("idtype")
+		// log.SetPrefix("[gen] ")
+		// koanf, err := config.NewConfig()
+		// utils.CheckErrWithStatus(err)
+		//
+		// prefix, _ := cmd.Flags().GetString("prefix")
+		// if prefix == "" {
+		// 	prefix = koanf.String("db.tablePrefix")
+		// }
+		//
+		// cwd, _ := os.Getwd()
+		// schemaPath := filepath.Join(cwd, "internal/data/ent/schema")
+		//
+		// var features []gen.Feature
+		// for _, feature := range featureArr {
+		// 	switch feature {
+		// 	case "schema/snapshot":
+		// 		features = append(features, gen.FeatureSnapshot)
+		// 	case "sql/modifier":
+		// 		features = append(features, gen.FeatureModifier)
+		// 	case "sql/versioned-migration":
+		// 		features = append(features, gen.FeatureVersionedMigration)
+		// 	case "privacy":
+		// 		features = append(features, gen.FeaturePrivacy)
+		// 	case "entql":
+		// 		features = append(features, gen.FeatureEntQL)
+		// 	case "sql/schemaconfig":
+		// 		features = append(features, gen.FeatureSchemaConfig)
+		// 	case "sql/lock":
+		// 		features = append(features, gen.FeatureLock)
+		// 	case "sql/execquery":
+		// 		features = append(features, gen.FeatureExecQuery)
+		// 	case "sql/upsert":
+		// 		features = append(features, gen.FeatureUpsert)
+		// 	case "namedges":
+		// 	}
+		// }
+		//
+		// log.Println("features:", featureArr)
+		//
+		// cfg := &gen.Config{
+		// 	Hooks: []gen.Hook{
+		// 		PrefixSchema(prefix),
+		// 	},
+		// 	Features: features,
+		// }
+		// if idType == "int64" {
+		// 	log.Printf("id type: %s\n", idType)
+		// 	cfg.IDType = &field.TypeInfo{Type: field.TypeInt64}
+		// }
+		// err = entc.Generate(schemaPath, cfg)
+		// utils.CheckErrWithStatus(err)
 
 		log.Println("generate entity success")
 	},
