@@ -25,6 +25,7 @@ var buildCmd = &cobra.Command{
 		win, _ := cmd.Flags().GetBool("win")
 		output, _ := cmd.Flags().GetString("output")
 		dlv, _ := cmd.Flags().GetBool("dlv")
+		trim, _ := cmd.Flags().GetBool("trim")
 
 		log.SetPrefix("[build] ")
 		var (
@@ -90,11 +91,12 @@ var buildCmd = &cobra.Command{
 				if buildNum == 1 && output != "" {
 					c.Name = output
 				}
-				var buildArgs = []string{"build", "-trimpath"}
+				var buildArgs = []string{"build"}
+
 				if dlv {
 					buildArgs = append(buildArgs, `-gcflags=all=-N -l`)
-				} else {
-					buildArgs = append(buildArgs, "-ldflags=-s -w -extldflags '-static'")
+				} else if trim {
+					buildArgs = append(buildArgs, "-trimpath", "-ldflags=-s -w -extldflags '-static'")
 				}
 				// var buildArgs = []string{"build", "-trimpath", `-ldflags=-s -w -extldflags '-static'`, "-o", c.Name}
 				buildArgs = append(buildArgs, "-o", c.Name)
@@ -146,4 +148,5 @@ func init() {
 	buildCmd.Flags().StringP("name", "n", "main", "the generated app name")
 	buildCmd.Flags().StringP("output", "o", "", "the output filename, this option only works when building one binary")
 	buildCmd.Flags().Bool("dlv", false, "generate binary app can be debugged by dlv")
+	buildCmd.Flags().Bool("trim", false, "trim the path and other infos")
 }
