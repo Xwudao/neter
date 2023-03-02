@@ -108,7 +108,9 @@ var runCmd = &cobra.Command{
 		if extraCmd != "" {
 			innerArgs = append(innerArgs, parser.GetArgs(extraCmd)...)
 		}
-		log.Printf("extra args: %s\n", innerArgs)
+		if len(innerArgs) > 0 {
+			log.Printf("extra args: %s\n", innerArgs)
+		}
 
 		// just run app
 		appPath := proc.SearchBinary(name)
