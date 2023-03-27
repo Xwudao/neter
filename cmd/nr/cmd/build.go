@@ -6,6 +6,7 @@ package cmd
 import (
 	"fmt"
 	"log"
+	"path/filepath"
 	"strings"
 
 	"github.com/AlecAivazis/survey/v2"
@@ -51,7 +52,7 @@ var buildCmd = &cobra.Command{
 				cmdPaths = append(cmdPaths, k)
 			}
 			prompt := &survey.Select{
-				Message:  "Which directory do you want to run?",
+				Message:  "Which directory do you want to build?",
 				Options:  cmdPaths,
 				PageSize: 10,
 			}
@@ -62,6 +63,9 @@ var buildCmd = &cobra.Command{
 			appRoot = cmdPath[dir]
 		}
 		var buildPath = fmt.Sprintf("./%s/", appRoot)
+		if name == "" {
+			name = filepath.Base(appRoot)
+		}
 
 		var Config = []struct {
 			Name  string
@@ -145,7 +149,7 @@ func init() {
 	buildCmd.Flags().BoolP("mac", "m", false, "build the mac binary")
 	buildCmd.Flags().String("dir", "app", "the directory of the application")
 	buildCmd.Flags().StringP("arch", "a", "amd64", "the architecture of the binary")
-	buildCmd.Flags().StringP("name", "n", "main", "the generated app name")
+	buildCmd.Flags().StringP("name", "n", "", "the generated app name")
 	buildCmd.Flags().StringP("output", "o", "", "the output filename, this option only works when building one binary")
 	buildCmd.Flags().Bool("dlv", false, "generate binary app can be debugged by dlv")
 	buildCmd.Flags().Bool("trim", false, "trim the path and other infos")
