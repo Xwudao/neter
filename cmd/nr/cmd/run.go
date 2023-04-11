@@ -8,6 +8,7 @@ import (
 	"bytes"
 	"context"
 	"fmt"
+	"github.com/Xwudao/neter/pkg/parser"
 	"io"
 	"log"
 	"os"
@@ -37,6 +38,7 @@ var runCmd = &cobra.Command{
 		del, _ := cmd.Flags().GetBool("delete")
 		wire, _ := cmd.Flags().GetBool("wire")
 		dir, _ := cmd.Flags().GetString("dir")
+		extraCmd, _ := cmd.Flags().GetString("cmd")
 
 		if win {
 			name += ".exe"
@@ -103,14 +105,11 @@ var runCmd = &cobra.Command{
 
 		// run generate app's command
 		var innerArgs []string
-		if len(args) > 1 {
-			for _, arg := range args[1:] {
-				if strings.Contains(arg, "=") {
-					innerArgs = append(innerArgs, "--"+arg)
-				} else {
-					innerArgs = append(innerArgs, arg)
-				}
-			}
+		if extraCmd != "" {
+			innerArgs = append(innerArgs, parser.GetArgs(extraCmd)...)
+		}
+		if len(innerArgs) > 0 {
+			log.Printf("extra args: %s\n", innerArgs)
 		}
 
 		// just run app
@@ -262,6 +261,7 @@ func init() {
 	// runCmd.Flags().BoolP("toggle", "t", false, "Help message for toggle")
 
 	runCmd.Flags().String("dir", "app", "the directory of the application")
+	runCmd.Flags().StringP("cmd", "c", "", "the extra args set to the application")
 	runCmd.Flags().StringP("name", "n", "main", "the generated app name")
 	runCmd.Flags().BoolP("wire", "w", false, "generate wire file")
 	runCmd.Flags().BoolP("delete", "d", false, "delete the generated app")
