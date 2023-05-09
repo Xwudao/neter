@@ -302,6 +302,14 @@ func (g *GenerateRoute) ToCamel(str string) string {
 	return strcase.ToCamel(str)
 }
 
+func (g *GenerateRoute) ToSnake(str string) string {
+	return strcase.ToSnake(str)
+}
+
+func (g *GenerateRoute) ToKebab(str string) string {
+	return strcase.ToKebab(str)
+}
+
 // sub commands
 
 var genEntCmd = &cobra.Command{

@@ -4,6 +4,7 @@ package {{.PackageName}}
 import (
 	"github.com/gin-gonic/gin"
 	"github.com/knadh/koanf"
+	"go.uber.org/zap"
 
 
 	"{{.ModName}}/internal/core"
@@ -13,12 +14,14 @@ import (
 type {{.StructRouteName}} struct {
 	conf *koanf.Koanf
 	g    *gin.Engine
+	log        *zap.SugaredLogger
 }
 
-func New{{.StructRouteName}}(g *gin.Engine, conf *koanf.Koanf) *{{.StructRouteName}} {
+func New{{.StructRouteName}}(g *gin.Engine, log *zap.SugaredLogger, conf *koanf.Koanf) *{{.StructRouteName}} {
 	r := &{{.StructRouteName}}{
 		conf: conf,
 		g:    g,
+		log:  log.Named("{{.ToKebab .StructRouteName}}"),
 	}
 
 	return r
