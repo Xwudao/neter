@@ -2,7 +2,11 @@
 package {{.PackageName}}
 
 import (
+	"context"
+
 	"go.uber.org/zap"
+
+	"{{.ModName}}/internal/system"
 )
 
 type {{.ToCamel .Name}}Repository interface {
@@ -11,11 +15,13 @@ type {{.ToCamel .Name}}Repository interface {
 
 type {{.StructBizName}} struct {
 	log *zap.SugaredLogger
+	ctx context.Context
 }
 
-func New{{.StructBizName}}(log *zap.SugaredLogger) *{{.StructBizName}} {
+func New{{.StructBizName}}(log *zap.SugaredLogger, appCtx *system.AppContext) *{{.StructBizName}} {
 	return &{{.StructBizName}}{
 		log: log.Named("{{.ToKebab .StructBizName}}"),
+		ctx: appCtx.Ctx,
 	}
 }
 
