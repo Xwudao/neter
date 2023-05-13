@@ -16,12 +16,14 @@ type {{.ToCamel .Name}}Repository interface {
 type {{.StructBizName}} struct {
 	log *zap.SugaredLogger
 	ctx context.Context
+	{{.ExtractInitials .Name}}r {{.ToCamel .Name}}Repository
 }
 
-func New{{.StructBizName}}(log *zap.SugaredLogger, appCtx *system.AppContext) *{{.StructBizName}} {
+func New{{.StructBizName}}(log *zap.SugaredLogger, {{.ExtractInitials .Name}}r {{.ToCamel .Name}}Repository, appCtx *system.AppContext) *{{.StructBizName}} {
 	return &{{.StructBizName}}{
 		log: log.Named("{{.ToKebab .StructBizName}}"),
 		ctx: appCtx.Ctx,
+		{{.ExtractInitials .Name}}r: {{.ExtractInitials .Name}}r,
 	}
 }
 

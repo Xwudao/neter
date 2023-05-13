@@ -309,6 +309,9 @@ func (g *GenerateRoute) ToSnake(str string) string {
 func (g *GenerateRoute) ToKebab(str string) string {
 	return strcase.ToKebab(str)
 }
+func (g *GenerateRoute) ExtractInitials(str string) string {
+	return utils.ExtractInitials(g.ToCamel(str))
+}
 
 // sub commands
 
