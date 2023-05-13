@@ -36,8 +36,10 @@ var genCmd = &cobra.Command{
 	Run: func(cmd *cobra.Command, args []string) {
 		tpe, _ := cmd.Flags().GetString("type")
 		name, _ := cmd.Flags().GetString("name")
+		noRepo, _ := cmd.Flags().GetBool("no-repo")
 
 		g := NewGenerate(name, tpe)
+
 		g.init()
 
 		switch tpe {
@@ -49,8 +51,10 @@ var genCmd = &cobra.Command{
 		case "biz":
 			g.GenBiz()
 			g.updateBizProvider()
-			g.GenRepo()
-			g.updateRepoProvider()
+			if !noRepo {
+				g.GenRepo()
+				g.updateRepoProvider()
+			}
 			utils.Info("generate biz success")
 		default:
 			utils.CheckErrWithStatus(errors.New("unknown type"))
@@ -79,6 +83,7 @@ type GenerateRoute struct {
 
 	Name     string // eg: home
 	TypeName string // eg: route, service, etc
+	NoRepo   bool   // no repo file generated
 
 	StructRouteName string // eg: HomeRoute
 	StructBizName   string // eg: HomeBiz
@@ -497,6 +502,7 @@ func init() {
 	// is called directly, e.g.:
 	// genCmd.Flags().BoolP("toggle", "t", false, "Help message for toggle")
 	genCmd.Flags().StringP("type", "t", "route", "type of gen")
+	genCmd.Flags().Bool("no-repo", false, "generate repo file")
 	genCmd.Flags().StringP("name", "n", "", "name of gen")
 
 	genCmd.MarkFlagsRequiredTogether("type", "name")
