@@ -47,7 +47,7 @@ func (r *{{.StructRouteName}}) Reg() {
 
 
 func (r *{{.StructRouteName}}) {{.ToLowerCamel .Name}}() core.WrappedHandlerFunc {
-	return func(c *gin.Context) (interface{}, *core.RtnStatus) {
+	return func(c *gin.Context) (any, *core.RtnStatus) {
 		return "hello", nil
 	}
 }
