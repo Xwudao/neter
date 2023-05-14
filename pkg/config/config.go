@@ -23,7 +23,7 @@ func NewConfig() (*koanf.Koanf, error) {
 		return nil, err
 	}
 
-	_ = f.Watch(func(event interface{}, err error) {
+	_ = f.Watch(func(event any, err error) {
 		if err != nil {
 			log.Println(err)
 			return
@@ -52,7 +52,7 @@ func NewTestConfig() (*koanf.Koanf, error) {
 
 func setDefault(k *koanf.Koanf) {
 
-	_ = k.Load(confmap.Provider(map[string]interface{}{
+	_ = k.Load(confmap.Provider(map[string]any{
 		"db.tablePrefix": "",
 	}, "."), nil)
 }
