@@ -42,18 +42,18 @@ func (h *{{.StructBizName}}) Index() string {
 
 {{if .WithCRUD}}
 	func (h *{{.StructBizName}}) Delete(id int64) error {
-	return h.mr.DeleteByID(id)
+	return h.{{.ExtractInitials .Name}}r.DeleteByID(id)
 	}
 
 	func (h *{{.StructBizName}}) Get(id int64) (*ent.{{.EntName}}, error) {
-	return h.mr.GetByID(id)
+	return h.{{.ExtractInitials .Name}}r.GetByID(id)
 	}
 
 	func (h *{{.StructBizName}}) Create() (*ent.{{.EntName}}, error) {
-	return h.mr.Create()
+	return h.{{.ExtractInitials .Name}}r.Create()
 	}
 
 	func (h *{{.StructBizName}}) GetAll() ([]*ent.{{.EntName}}, error) {
-	return h.mr.GetAll()
+	return h.{{.ExtractInitials .Name}}r.GetAll()
 	}
 {{end}}
