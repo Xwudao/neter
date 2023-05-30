@@ -358,10 +358,12 @@ var genEntCmd = &cobra.Command{
 		log.Println("run args: ", strings.Join(runArgs, " "))
 
 		res, err := runWithDir("go", aimPath, env, runArgs...)
-
-		utils.CheckErrWithStatus(err)
-
+		if err != nil {
+			log.SetPrefix("[err]")
+		}
 		log.Println(res)
+		utils.CheckErrWithStatus(err)
+		log.Println("generate entity success")
 
 		// featureArr, _ := cmd.Flags().GetStringSlice("feature")
 		// idType, _ := cmd.Flags().GetString("idtype")
@@ -417,7 +419,6 @@ var genEntCmd = &cobra.Command{
 		// err = entc.Generate(schemaPath, cfg)
 		// utils.CheckErrWithStatus(err)
 
-		log.Println("generate entity success")
 	},
 }
 
