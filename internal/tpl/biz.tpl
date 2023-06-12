@@ -2,7 +2,9 @@
 package {{.PackageName}}
 
 import (
-	"context"
+	{{if .WithCRUD}}
+		"context"
+{{end}}
 
 	"go.uber.org/zap"
 
@@ -13,10 +15,10 @@ import (
 
 type {{.ToCamel .Name}}Repository interface {
 {{if .WithCRUD}}
-	GetAll() ([]*ent.{{.EntName}}, error)
-	DeleteByID(id int64) error
-	GetByID(id int64) (*ent.{{.EntName}}, error)
-	Create() (*ent.{{.EntName}}, error)
+	GetAll(ctx context.Context) ([]*ent.{{.EntName}}, error)
+	DeleteByID(ctx context.Context, id int64) error
+	GetByID(ctx context.Context, id int64) (*ent.{{.EntName}}, error)
+	Create(ctx context.Context) (*ent.{{.EntName}}, error)
 {{else}}
 	TodoFunc() error
 {{end}}
@@ -24,14 +26,14 @@ type {{.ToCamel .Name}}Repository interface {
 
 type {{.StructBizName}} struct {
 	log *zap.SugaredLogger
-	ctx context.Context
+	appCtx *system.AppContext
 	{{.ExtractInitials .Name}}r {{.ToCamel .Name}}Repository
 }
 
 func New{{.StructBizName}}(log *zap.SugaredLogger, {{.ExtractInitials .Name}}r {{.ToCamel .Name}}Repository, appCtx *system.AppContext) *{{.StructBizName}} {
 	return &{{.StructBizName}}{
 		log: log.Named("{{.ToKebab .StructBizName}}"),
-		ctx: appCtx.Ctx,
+		appCtx: appCtx,
 		{{.ExtractInitials .Name}}r: {{.ExtractInitials .Name}}r,
 	}
 }
@@ -41,19 +43,19 @@ func (h *{{.StructBizName}}) Index() string {
 }
 
 {{if .WithCRUD}}
-	func (h *{{.StructBizName}}) Delete(id int64) error {
-	return h.{{.ExtractInitials .Name}}r.DeleteByID(id)
+	func (h *{{.StructBizName}}) Delete(ctx context.Context, id int64) error {
+	return h.{{.ExtractInitials .Name}}r.DeleteByID(ctx, id)
 	}
 
-	func (h *{{.StructBizName}}) Get(id int64) (*ent.{{.EntName}}, error) {
-	return h.{{.ExtractInitials .Name}}r.GetByID(id)
+	func (h *{{.StructBizName}}) Get(ctx context.Context, id int64) (*ent.{{.EntName}}, error) {
+	return h.{{.ExtractInitials .Name}}r.GetByID(ctx, id)
 	}
 
-	func (h *{{.StructBizName}}) Create() (*ent.{{.EntName}}, error) {
-	return h.{{.ExtractInitials .Name}}r.Create()
+	func (h *{{.StructBizName}}) Create(ctx context.Context) (*ent.{{.EntName}}, error) {
+	return h.{{.ExtractInitials .Name}}r.Create(ctx)
 	}
 
-	func (h *{{.StructBizName}}) GetAll() ([]*ent.{{.EntName}}, error) {
-	return h.{{.ExtractInitials .Name}}r.GetAll()
+	func (h *{{.StructBizName}}) GetAll(ctx context.Context) ([]*ent.{{.EntName}}, error) {
+	return h.{{.ExtractInitials .Name}}r.GetAll(ctx)
 	}
 {{end}}

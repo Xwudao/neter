@@ -2,7 +2,9 @@
 package data
 
 import (
+{{if .WithCRUD}}
 	"context"
+{{end}}
 
 	"{{.ModName}}/internal/biz"
 	"{{.ModName}}/internal/system"
@@ -14,7 +16,7 @@ import (
 var _ biz.{{.ToCamel .Name}}Repository = (*{{.ToLowerCamel .Name}}Repository)(nil)
 
 type {{.ToLowerCamel .Name}}Repository struct {
-	ctx context.Context
+	appCtx *system.AppContext
 {{- if .WithCRUD}}
 	data *Data
 {{- end}}
@@ -22,7 +24,7 @@ type {{.ToLowerCamel .Name}}Repository struct {
 
 func New{{.ToCamel .Name}}Repository(appCtx *system.AppContext {{if .WithCRUD}}, data *Data{{end}}) biz.{{.ToCamel .Name}}Repository {
 	return &{{.ToLowerCamel .Name}}Repository{
-		ctx: appCtx.Ctx,
+		appCtx: appCtx,
 {{- if .WithCRUD}}
 		data: data,
 {{- end}}
@@ -30,21 +32,21 @@ func New{{.ToCamel .Name}}Repository(appCtx *system.AppContext {{if .WithCRUD}},
 }
 
 {{if .WithCRUD}}
-	func (u *{{.ToLowerCamel .Name}}Repository) GetAll() ([]*ent.{{.EntName}}, error) {
-	return u.data.Client.{{.EntName}}.Query().All(u.ctx)
+	func (u *{{.ToLowerCamel .Name}}Repository) GetAll(ctx context.Context) ([]*ent.{{.EntName}}, error) {
+	return u.data.Client.{{.EntName}}.Query().All(ctx)
 	}
 
-	func (u *{{.ToLowerCamel .Name}}Repository) DeleteByID(id int64) error {
-	return u.data.Client.{{.EntName}}.DeleteOneID(id).Exec(u.ctx)
+	func (u *{{.ToLowerCamel .Name}}Repository) DeleteByID(ctx context.Context,id int64) error {
+	return u.data.Client.{{.EntName}}.DeleteOneID(id).Exec(ctx)
 	}
 
-	func (u *{{.ToLowerCamel .Name}}Repository) GetByID(id int64) (*ent.{{.EntName}}, error) {
-	return u.data.Client.{{.EntName}}.Get(u.ctx, id)
+	func (u *{{.ToLowerCamel .Name}}Repository) GetByID(ctx context.Context,id int64) (*ent.{{.EntName}}, error) {
+	return u.data.Client.{{.EntName}}.Get(ctx, id)
 	}
 
-	func (u *{{.ToLowerCamel .Name}}Repository) Create() (*ent.{{.EntName}}, error) {
+	func (u *{{.ToLowerCamel .Name}}Repository) Create(ctx context.Context) (*ent.{{.EntName}}, error) {
 	// todo add set fields
-	return u.data.Client.{{.EntName}}.Create().Save(u.ctx)
+	return u.data.Client.{{.EntName}}.Create().Save(ctx)
 	}
 {{else}}
     func (u *{{.ToLowerCamel .Name}}Repository) TodoFunc() error {
