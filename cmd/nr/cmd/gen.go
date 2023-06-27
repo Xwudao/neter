@@ -483,6 +483,7 @@ func (g *GenSubCmd) Gen() {
 	g.updateFields()
 	g.genCmd()
 	g.genCmdApp()
+	g.updateWireFile()
 }
 
 func (g *GenSubCmd) updateFields() {
@@ -536,6 +537,24 @@ func (g *GenSubCmd) genCmdApp() {
 
 	err = utils.SaveToFile(savePath, source, false)
 	utils.CheckErrWithStatus(err)
+}
+func (g *GenSubCmd) updateWireFile() {
+	log.Println("updating wire file")
+	wireFilePath := filepath.Join(g.ModPath, "internal/cmd_app", "wire.go")
+	fset := token.NewFileSet() // positions are relative to fset
+	f, err := parser.ParseFile(fset, wireFilePath, nil, parser.ParseComments)
+	utils.CheckErrWithStatus(err)
+
+	wk := visitor.NewCmdWireVisitor(g.StructName, g.StructAppName)
+	ast.Walk(wk, f)
+	wk.InsertInitCmdFunc(f)
+
+	var dst bytes.Buffer
+	err = format.Node(&dst, fset, f)
+	utils.CheckErrWithStatus(err)
+	err = utils.SaveToFile(wireFilePath, dst.Bytes(), true)
+
+	log.Println("update wire file success")
 }
 
 func init() {
