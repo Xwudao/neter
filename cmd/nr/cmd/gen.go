@@ -453,7 +453,10 @@ var genCmdCmd = &cobra.Command{
 		modPath, err := utils.FindModPath(3)
 		utils.CheckErrWithStatus(err)
 
-		NewGenSubCmd(name, modPath).Gen()
+		modName := utils.GetModName()
+
+		log.Println("now in mod: " + modName)
+		NewGenSubCmd(name, modPath, modName).Gen()
 
 	},
 }
@@ -461,36 +464,67 @@ var genCmdCmd = &cobra.Command{
 type GenSubCmd struct {
 	Name       string
 	ModPath    string // root path
+	ModName    string // root mod name
 	StructName string // eg: HelloYouCmd
 	KebabName  string // eg: hello-you
+	SnakeName  string // eg: hello_you
+
+	StructAppName string // eg: HelloYouApp
 }
 
-func NewGenSubCmd(name string, modPath string) *GenSubCmd {
-	return &GenSubCmd{Name: name, ModPath: modPath}
+func NewGenSubCmd(name string, modPath string, modName string) *GenSubCmd {
+	return &GenSubCmd{Name: name, ModPath: modPath, ModName: modName}
 }
 
 func (g *GenSubCmd) Gen() {
 	log.SetPrefix("[gen] ")
 	log.Println("generate command: ", g.Name)
 	g.checkFile()
+	g.updateFields()
 	g.genCmd()
+	g.genCmdApp()
+}
+
+func (g *GenSubCmd) updateFields() {
+	g.StructName = strcase.ToCamel(g.Name) + "Cmd"
+	g.StructAppName = strcase.ToCamel(g.Name) + "App"
+	g.KebabName = strcase.ToKebab(g.Name)
+	g.SnakeName = strcase.ToSnake(g.Name)
 }
 
 func (g *GenSubCmd) checkFile() {
-	snakeName := strcase.ToSnake(g.Name)
-	cmdPath := filepath.Join(g.ModPath, "internal/cmd", snakeName+".go")
+	cmdPath := filepath.Join(g.ModPath, "internal/cmd", g.SnakeName+".go")
 	if _, err := os.Stat(cmdPath); err == nil {
-		utils.CheckErrWithStatus(errors.New("file already exists"))
+		utils.CheckErrWithStatus(errors.New("cmd file already exists"))
+		return
+	}
+	cmdAppPath := filepath.Join(g.ModPath, "internal/cmd_app", g.SnakeName+".go")
+	if _, err := os.Stat(cmdAppPath); err == nil {
+		utils.CheckErrWithStatus(errors.New("cmd_app file already exists"))
 		return
 	}
 }
 
 func (g *GenSubCmd) genCmd() {
-	g.StructName = strcase.ToCamel(g.Name) + "Cmd"
-	g.KebabName = strcase.ToKebab(g.Name)
-	savePath := filepath.Join(g.ModPath, "internal/cmd", g.KebabName+".go")
+	savePath := filepath.Join(g.ModPath, "internal/cmd", g.SnakeName+".go")
 
 	parse, err := template.New("cmd").Parse(tpl.CmdTpl)
+	utils.CheckErrWithStatus(err)
+
+	buffer := bytes.NewBuffer([]byte{})
+	err = parse.Execute(buffer, g)
+	utils.CheckErrWithStatus(err)
+
+	source, err := format.Source(buffer.Bytes())
+	utils.CheckErrWithStatus(err)
+
+	err = utils.SaveToFile(savePath, source, false)
+	utils.CheckErrWithStatus(err)
+}
+func (g *GenSubCmd) genCmdApp() {
+	savePath := filepath.Join(g.ModPath, "internal/cmd_app", g.SnakeName+"_app.go")
+
+	parse, err := template.New("cmd_app").Parse(tpl.CmdAppTpl)
 	utils.CheckErrWithStatus(err)
 
 	buffer := bytes.NewBuffer([]byte{})

@@ -13,3 +13,6 @@ var RepoTpl string
 
 //go:embed cmd.tpl
 var CmdTpl string
+
+//go:embed cmd_app.tpl
+var CmdAppTpl string
