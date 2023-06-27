@@ -28,18 +28,18 @@ func New{{.StructRouteName}}(g *gin.Engine, log *zap.SugaredLogger, conf *koanf.
 }
 
 func (r *{{.StructRouteName}}) Reg() {
-	// r.g.GET("/{{.PackageName}}/{{.ToLowerCamel .Name}}", core.WrapData(r.{{.ToLowerCamel .Name}}()))
+	// r.g.GET("/{{.PackageName}}/{{.ToSnake .Name}}", core.WrapData(r.{{.ToLowerCamel .Name}}()))
 
-	group := r.g.Group("/{{.PackageName}}/{{.ToLowerCamel .Name}}")
+	group := r.g.Group("/{{.PackageName}}/{{.ToSnake .Name}}")
 	{
 		group.GET("", core.WrapData(r.{{.ToLowerCamel .Name}}()))
 	}
-	authGroup := r.g.Group("/auth/{{.PackageName}}/{{.ToLowerCamel .Name}}").Use(mdw.MustLoginMiddleware())
+	authGroup := r.g.Group("/auth/{{.PackageName}}/{{.ToSnake .Name}}").Use(mdw.MustLoginMiddleware())
 	{
 		// authGroup.GET("/auth", core.WrapData(r.{{.ToLowerCamel .Name}}()))
 		_ = authGroup
 	}
-	adminGroup := r.g.Group("/admin/{{.PackageName}}/{{.ToLowerCamel .Name}}").Use(mdw.MustWithRoleMiddleware("admin"))
+	adminGroup := r.g.Group("/admin/{{.PackageName}}/{{.ToSnake .Name}}").Use(mdw.MustWithRoleMiddleware("admin"))
 	{
 		_ = adminGroup
 	}
