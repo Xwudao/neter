@@ -3,7 +3,7 @@ package {{.PackageName}}
 
 import (
 	"github.com/gin-gonic/gin"
-	"github.com/knadh/koanf"
+	"github.com/knadh/koanf/v2"
 	"go.uber.org/zap"
 
 
