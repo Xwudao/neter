@@ -89,7 +89,7 @@ var buildCmd = &cobra.Command{
 		for _, c := range Config {
 			if c.Build {
 				// generate app
-				log.Println(fmt.Sprintf("building [%s] app", c.Type))
+				log.Printf("building [%s] app", c.Type)
 				// var buildStr = fmt.Sprintf(`build -trimpath -ldflags "-s -w -extldflags '-static'" -o %s %s`, c.Name, buildPath)
 				// buildArgs, err := windows.DecomposeCommandLine(buildStr)
 				if buildNum == 1 && output != "" {
@@ -122,7 +122,7 @@ var buildCmd = &cobra.Command{
 
 				if dlv {
 					log.Println("now, you can debug with dlv: ")
-					log.Println(fmt.Sprintf(`dlv --listen=:2345 --headless=true --api-version=2 --accept-multiclient exec ./%s`, c.Name))
+					log.Printf(`dlv --listen=:2345 --headless=true --api-version=2 --accept-multiclient exec ./%s`, c.Name)
 
 				}
 			}

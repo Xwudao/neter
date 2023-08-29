@@ -172,12 +172,12 @@ func (i *InitProject) getOriginName() (name string, err error) {
 		return
 	}
 
-	cnt, err := ioutil.ReadFile(i.modPath)
+	cnt, err := os.ReadFile(i.modPath)
 	if err != nil {
 		return
 	}
 
-	compile := regexp.MustCompile("(?m)module\\s([^\\s]+)")
+	compile := regexp.MustCompile(`(?m)module\s(\S+)`)
 	matches := compile.FindStringSubmatch(string(cnt))
 	if len(matches) >= 2 {
 		return matches[1], nil

@@ -8,7 +8,6 @@ import (
 	"bytes"
 	"context"
 	"fmt"
-	"github.com/Xwudao/neter/pkg/parser"
 	"io"
 	"log"
 	"os"
@@ -24,6 +23,7 @@ import (
 	"github.com/AlecAivazis/survey/v2"
 	"github.com/spf13/cobra"
 
+	"github.com/Xwudao/neter/pkg/parser"
 	"github.com/Xwudao/neter/pkg/proc"
 )
 
@@ -126,7 +126,7 @@ var runCmd = &cobra.Command{
 		go write(ctx, cancel, stdOutPipe)
 		go write(ctx, cancel, stdErrPipe)
 
-		quit := make(chan os.Signal)
+		quit := make(chan os.Signal, 1)
 		signal.Notify(quit, syscall.SIGINT, syscall.SIGTERM)
 
 		defer func() {

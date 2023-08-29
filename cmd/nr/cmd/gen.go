@@ -552,7 +552,7 @@ func (g *GenSubCmd) updateWireFile() {
 	var dst bytes.Buffer
 	err = format.Node(&dst, fset, f)
 	utils.CheckErrWithStatus(err)
-	err = utils.SaveToFile(wireFilePath, dst.Bytes(), true)
+	_ = utils.SaveToFile(wireFilePath, dst.Bytes(), true)
 
 	log.Println("update wire file success")
 }
