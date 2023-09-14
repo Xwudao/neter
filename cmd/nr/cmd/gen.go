@@ -198,7 +198,7 @@ func (g *GenerateRoute) updateRoot() {
 	}
 
 	fset := token.NewFileSet() // positions are relative to fset
-	f, err := parser.ParseFile(fset, rootFilePath, nil, 0)
+	f, err := parser.ParseFile(fset, rootFilePath, nil, parser.ParseComments)
 	utils.CheckErrWithStatus(err)
 
 	// update content
@@ -215,7 +215,12 @@ func (g *GenerateRoute) updateRoot() {
 	var dst bytes.Buffer
 	err = format.Node(&dst, fset, f)
 	utils.CheckErrWithStatus(err)
-	err = utils.SaveToFile(rootFilePath, dst.Bytes(), true)
+
+	formatter := visitor.NewFormatLine()
+	rtn, err := formatter.FormatHttpEngine(dst.Bytes())
+	utils.CheckErrWithStatus(err)
+
+	err = utils.SaveToFile(rootFilePath, rtn, true)
 	utils.CheckErrWithStatus(err)
 
 	utils.Info("updating root.go success")
@@ -231,7 +236,7 @@ func (g *GenerateRoute) updateBizProvider() {
 	}
 
 	fset := token.NewFileSet() // positions are relative to fset
-	f, err := parser.ParseFile(fset, rootFilePath, nil, 0)
+	f, err := parser.ParseFile(fset, rootFilePath, nil, parser.ParseComments)
 	utils.CheckErrWithStatus(err)
 
 	// update content
@@ -242,7 +247,13 @@ func (g *GenerateRoute) updateBizProvider() {
 	var dst bytes.Buffer
 	err = format.Node(&dst, fset, f)
 	utils.CheckErrWithStatus(err)
-	err = utils.SaveToFile(rootFilePath, dst.Bytes(), true)
+
+	// reformat
+	formatter := visitor.NewFormatLine()
+	rtn, err := formatter.FormatProvider(dst.Bytes())
+	utils.CheckErrWithStatus(err)
+
+	err = utils.SaveToFile(rootFilePath, rtn, true)
 	utils.CheckErrWithStatus(err)
 
 	utils.Info("updating provider.go success")
@@ -258,7 +269,7 @@ func (g *GenerateRoute) updateRepoProvider() {
 	}
 
 	fset := token.NewFileSet() // positions are relative to fset
-	f, err := parser.ParseFile(fset, rootFilePath, nil, 0)
+	f, err := parser.ParseFile(fset, rootFilePath, nil, parser.ParseComments)
 	utils.CheckErrWithStatus(err)
 
 	// update content
@@ -269,7 +280,13 @@ func (g *GenerateRoute) updateRepoProvider() {
 	var dst bytes.Buffer
 	err = format.Node(&dst, fset, f)
 	utils.CheckErrWithStatus(err)
-	err = utils.SaveToFile(rootFilePath, dst.Bytes(), true)
+
+	// reformat
+	formatter := visitor.NewFormatLine()
+	rtn, err := formatter.FormatProvider(dst.Bytes())
+	utils.CheckErrWithStatus(err)
+
+	err = utils.SaveToFile(rootFilePath, rtn, true)
 	utils.CheckErrWithStatus(err)
 
 	utils.Info("updating provider.go success")
@@ -285,7 +302,7 @@ func (g *GenerateRoute) updateRouteProvider() {
 	}
 
 	fset := token.NewFileSet() // positions are relative to fset
-	f, err := parser.ParseFile(fset, rootFilePath, nil, 0)
+	f, err := parser.ParseFile(fset, rootFilePath, nil, parser.ParseComments)
 	utils.CheckErrWithStatus(err)
 
 	// update content
@@ -302,7 +319,13 @@ func (g *GenerateRoute) updateRouteProvider() {
 	var dst bytes.Buffer
 	err = format.Node(&dst, fset, f)
 	utils.CheckErrWithStatus(err)
-	err = utils.SaveToFile(rootFilePath, dst.Bytes(), true)
+
+	// reformat
+	formatter := visitor.NewFormatLine()
+	rtn, err := formatter.FormatProvider(dst.Bytes())
+	utils.CheckErrWithStatus(err)
+
+	err = utils.SaveToFile(rootFilePath, rtn, true)
 	utils.CheckErrWithStatus(err)
 
 	utils.Info("updating provider.go success")
