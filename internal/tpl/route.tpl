@@ -3,7 +3,11 @@ package {{.PackageName}}
 
 import (
 	"github.com/gin-gonic/gin"
+{{if .V2 -}}
 	"github.com/knadh/koanf/v2"
+{{else -}}
+	"github.com/knadh/koanf"
+{{- end}}
 	"go.uber.org/zap"
 
 

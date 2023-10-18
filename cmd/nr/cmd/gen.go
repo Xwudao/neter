@@ -37,10 +37,11 @@ var genCmd = &cobra.Command{
 		tpe, _ := cmd.Flags().GetString("type")
 		name, _ := cmd.Flags().GetString("name")
 		noRepo, _ := cmd.Flags().GetBool("no-repo")
+		v2, _ := cmd.Flags().GetBool("v2")
 		withCrud, _ := cmd.Flags().GetBool("with-crud")
 		entName, _ := cmd.Flags().GetString("ent-name")
 
-		g := NewGenerate(name, tpe, withCrud, entName)
+		g := NewGenerate(name, tpe, withCrud, entName, v2)
 
 		err := g.preCheck()
 		utils.CheckErrWithStatus(err)
@@ -93,13 +94,15 @@ type GenerateRoute struct {
 	TypeName string // eg: route, service, etc
 	NoRepo   bool   // no repo file generated
 
+	V2 bool // is v2, now just changed the v2 koanf
+
 	StructRouteName string // eg: HomeRoute
 	StructBizName   string // eg: HomeBiz
 	StructRepoName  string // eg: HomeRepo
 }
 
-func NewGenerate(name string, typeName string, crud bool, entName string) *GenerateRoute {
-	return &GenerateRoute{Name: name, TypeName: typeName, WithCRUD: crud, EntName: entName}
+func NewGenerate(name string, typeName string, crud bool, entName string, v2 bool) *GenerateRoute {
+	return &GenerateRoute{Name: name, TypeName: typeName, WithCRUD: crud, EntName: entName, V2: v2}
 }
 
 func (g *GenerateRoute) preCheck() error {
@@ -598,6 +601,7 @@ func init() {
 	// genCmd.Flags().BoolP("toggle", "t", false, "Help message for toggle")
 	genCmd.Flags().StringP("type", "t", "route", "type of gen")
 	genCmd.Flags().Bool("no-repo", false, "generate repo file")
+	genCmd.Flags().Bool("v2", false, "is v2")
 	genCmd.Flags().Bool("with-crud", false, "generate crud section in repo and biz file")
 	genCmd.Flags().String("ent-name", "", "generate crud section's ent name")
 	genCmd.Flags().StringP("name", "n", "", "name of gen")
