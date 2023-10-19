@@ -17,8 +17,8 @@ import (
 	"strings"
 	"text/template"
 
-	"entgo.io/ent/dialect/entsql"
-	"entgo.io/ent/entc/gen"
+	"github.com/Xwudao/neter/pkg/filex"
+	"github.com/Xwudao/neter/pkg/tsx"
 	"github.com/iancoleman/strcase"
 	"github.com/spf13/cobra"
 	"golang.org/x/tools/go/ast/astutil"
@@ -363,7 +363,6 @@ func (g *GenerateRoute) ExtractInitials(str string) string {
 }
 
 // sub commands
-
 var genEntCmd = &cobra.Command{
 	Use:   "ent",
 	Short: "generate entity",
@@ -448,28 +447,6 @@ var genEntCmd = &cobra.Command{
 	},
 }
 
-// PrefixSchema add the prefix to the schema name
-func PrefixSchema(prefix string) gen.Hook {
-	return func(next gen.Generator) gen.Generator {
-		return gen.GenerateFunc(func(g *gen.Graph) error {
-			if prefix == "" {
-				return next.Generate(g)
-			}
-			if !strings.HasSuffix(prefix, "_") {
-				prefix += "_"
-			}
-			for _, n := range g.Nodes {
-				a := &entsql.Annotation{Table: fmt.Sprintf("%s%s", strcase.ToSnake(prefix), n.Table())}
-				if n.Annotations == nil {
-					n.Annotations = gen.Annotations{}
-				}
-				n.Annotations[a.Name()] = a
-			}
-			return next.Generate(g)
-		})
-	}
-}
-
 var genCmdCmd = &cobra.Command{
 	Use:   "cmd",
 	Short: "generate command",
@@ -483,6 +460,58 @@ var genCmdCmd = &cobra.Command{
 
 		log.Println("now in mod: " + modName)
 		NewGenSubCmd(name, modPath, modName).Gen()
+
+	},
+}
+
+var genTsCmd = &cobra.Command{
+	Use:   "ts",
+	Short: "generate typescript interface",
+	Long:  `generate typescript interface`,
+	Run: func(cmd *cobra.Command, args []string) {
+		//force, _ := cmd.Flags().GetBool("force")
+		log.SetPrefix("[gen] ")
+		dir, _ := os.Getwd()
+
+		// 获取当前目录下的build文件夹里面的.log文件，解析出：
+		/**
+		path:
+		query:
+		name:
+		method:
+		reqbody:
+		resbody:
+		*/
+		// 生成对应的interface
+
+		// 1. 获取当前目录下的build文件夹里面的.log文件
+		buildDir := filepath.Join(dir, "build")
+		stat, err := os.Stat(buildDir)
+		utils.CheckErrWithStatus(err)
+
+		if !stat.IsDir() {
+			utils.CheckErrWithStatus(errors.New("build is not a dir"))
+		}
+
+		files, err := filex.LoadFiles(buildDir, func(s string) bool {
+			return strings.HasSuffix(s, ".log")
+		})
+		utils.CheckErrWithStatus(err)
+
+		for _, file := range files {
+			log.Println("file: ", file)
+			rtn, err := tsx.ParseLog(file)
+			if err != nil {
+				log.Printf("parse log file [%s] error: %s\n", file, err.Error())
+				continue
+			}
+
+			tsFilename := strings.ReplaceAll(file, ".log", ".ts")
+			log.Println("tsFilename: ", tsFilename)
+
+			err = tsx.GenTs(tsFilename, rtn)
+			utils.CheckErrWithStatus(err)
+		}
 
 	},
 }
@@ -587,7 +616,7 @@ func init() {
 
 	strcase.ConfigureAcronym("neo4j", "neo4j")
 
-	genCmd.AddCommand(genEntCmd, genCmdCmd)
+	genCmd.AddCommand(genEntCmd, genCmdCmd, genTsCmd)
 	rootCmd.AddCommand(genCmd)
 
 	// Here you will define your flags and configuration settings.
@@ -614,5 +643,7 @@ func init() {
 
 	genCmdCmd.Flags().StringP("name", "n", "", "name of gen")
 	_ = genCmdCmd.MarkFlagRequired("name")
+
+	genTsCmd.Flags().BoolP("force", "f", false, "force generate ts interface")
 
 }
