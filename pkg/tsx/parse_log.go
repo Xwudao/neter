@@ -1,10 +1,12 @@
 package tsx
 
 import (
+	"bytes"
 	"fmt"
 	"io"
 	"os"
 	"strings"
+	"text/template"
 
 	"github.com/iancoleman/strcase"
 )
@@ -24,7 +26,7 @@ func ParseLog(fp string) ([]string, error) {
 	}
 
 	var (
-		//path       string
+		path       string
 		query      string
 		method     string
 		name       string
@@ -44,7 +46,7 @@ func ParseLog(fp string) ([]string, error) {
 		cnt := hd[1]
 		switch strings.TrimSpace(head) {
 		case "path":
-			//path = strings.TrimSpace(cnt)
+			path = strings.TrimSpace(cnt)
 		case "query":
 			query = strings.TrimSpace(cnt)
 		case "method":
@@ -58,18 +60,19 @@ func ParseLog(fp string) ([]string, error) {
 		}
 	}
 
-	strcase.ConfigureAcronym("POST", "post")
-	strcase.ConfigureAcronym("GET", "get")
-	strcase.ConfigureAcronym("PUT", "put")
-	strcase.ConfigureAcronym("DELETE", "delete")
-	strcase.ConfigureAcronym("OPTIONS", "options")
+	var (
+		queryName string
+		reqName   string
+		resName   string
+	)
 
 	if query != "" {
+		queryName = strcase.ToCamel(method + fmt.Sprintf("%sQuery", name))
 		qJ, err := query2JsonStr(query)
 		if err != nil {
 			return nil, err
 		}
-		qTs, err := jsonToTypeScriptInterface(qJ, strcase.ToLowerCamel(method+fmt.Sprintf("%sQuery", name)))
+		qTs, err := jsonToTypeScriptInterface(qJ, queryName)
 		if err != nil {
 			return nil, err
 		}
@@ -77,7 +80,8 @@ func ParseLog(fp string) ([]string, error) {
 	}
 
 	if reqBodyStr != "" {
-		reqTs, err := jsonToTypeScriptInterface(reqBodyStr, strcase.ToLowerCamel(method+fmt.Sprintf("%sReq", name)))
+		reqName = strcase.ToCamel(method + fmt.Sprintf("%sReq", name))
+		reqTs, err := jsonToTypeScriptInterface(reqBodyStr, reqName)
 		if err != nil {
 			return nil, err
 		}
@@ -85,12 +89,65 @@ func ParseLog(fp string) ([]string, error) {
 	}
 
 	if resBodyStr != "" {
-		resTs, err := jsonToTypeScriptInterface(resBodyStr, strcase.ToLowerCamel(method+fmt.Sprintf("%sRes", name)))
+		resName = strcase.ToCamel(method + fmt.Sprintf("%sRes", name))
+		resTs, err := jsonToTypeScriptInterface(resBodyStr, resName)
 		if err != nil {
 			return nil, err
 		}
 		rtn = append(rtn, resTs)
 	}
 
+	mtd := generateMethod(path, name, method, reqName, queryName, resName)
+	if mtd != "" {
+		rtn = append(rtn, mtd)
+	}
+
 	return rtn, nil
+}
+
+func generateMethod(path, name, method, reqName, queryName, resName string) string {
+	var strTemplate = `const {{.MethodName}} = ({{.ReqParams}}) => {
+  return request<{{.ResName}}>({
+    url: '{{.Path}}',
+    method: '{{.Method}}',
+	{{if .ReqName -}}	data: payload, {{- end -}}
+	{{if .QueryName -}} params: query, {{- end}}
+  });
+};`
+
+	var reqParamsBuilder = strings.Builder{}
+	if queryName != "" {
+		reqParamsBuilder.WriteString("query: " + queryName)
+		reqParamsBuilder.WriteString(", ")
+	}
+	if reqName != "" {
+		reqParamsBuilder.WriteString("payload: " + reqName)
+		reqParamsBuilder.WriteString(", ")
+	}
+
+	var reqParams = strings.TrimRight(reqParamsBuilder.String(), ", ")
+
+	var data = map[string]any{
+		"Path":       path,
+		"Method":     method,
+		"ReqName":    reqName,
+		"ReqParams":  reqParams,
+		"MethodName": fmt.Sprintf("%sApi%s", strings.ToLower(method), strcase.ToCamel(name)),
+		"ResName":    resName,
+		"QueryName":  queryName,
+	}
+
+	var res bytes.Buffer
+
+	temp, err := template.New("ts-mt").Parse(strTemplate)
+	if err != nil {
+		return ""
+	}
+
+	err = temp.Execute(&res, data)
+	if err != nil {
+		return ""
+	}
+
+	return res.String()
 }
