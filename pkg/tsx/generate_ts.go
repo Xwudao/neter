@@ -15,7 +15,7 @@ func jsonToTypeScriptInterface(jsonStr string, interfaceName string) (string, er
 	}
 
 	var typeScriptCode strings.Builder
-	typeScriptCode.WriteString(fmt.Sprintf("interface %s {\n", interfaceName))
+	typeScriptCode.WriteString(fmt.Sprintf("export interface %s {\n", interfaceName))
 	generateTypeScriptCode(&typeScriptCode, jsonData)
 	typeScriptCode.WriteString("}\n")
 
