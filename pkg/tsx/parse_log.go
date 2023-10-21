@@ -64,10 +64,12 @@ func ParseLog(fp string) ([]string, error) {
 		queryName string
 		reqName   string
 		resName   string
+
+		upperName = strcase.ToCamel(name)
 	)
 
 	if query != "" {
-		queryName = strcase.ToCamel(method + fmt.Sprintf("%sQuery", name))
+		queryName = strcase.ToCamel(method + fmt.Sprintf("%sQuery", upperName))
 		qJ, err := query2JsonStr(query)
 		if err != nil {
 			return nil, err
@@ -80,7 +82,7 @@ func ParseLog(fp string) ([]string, error) {
 	}
 
 	if reqBodyStr != "" {
-		reqName = strcase.ToCamel(method + fmt.Sprintf("%sReq", name))
+		reqName = strcase.ToCamel(method + fmt.Sprintf("%sReq", upperName))
 		reqTs, err := jsonToTypeScriptInterface(reqBodyStr, reqName)
 		if err != nil {
 			return nil, err
@@ -89,7 +91,7 @@ func ParseLog(fp string) ([]string, error) {
 	}
 
 	if resBodyStr != "" {
-		resName = strcase.ToCamel(method + fmt.Sprintf("%sRes", name))
+		resName = strcase.ToCamel(method + fmt.Sprintf("%sRes", upperName))
 		resTs, err := jsonToTypeScriptInterface(resBodyStr, resName)
 		if err != nil {
 			return nil, err
