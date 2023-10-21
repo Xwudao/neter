@@ -55,6 +55,8 @@ func generateTypeScriptCode(code *strings.Builder, data map[string]interface{}) 
 			} else {
 				code.WriteString("any>;\n")
 			}
+		case nil:
+			code.WriteString("null;\n")
 		}
 	}
 }
