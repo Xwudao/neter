@@ -17,11 +17,12 @@ import (
 	"strings"
 	"text/template"
 
-	"github.com/Xwudao/neter/pkg/filex"
-	"github.com/Xwudao/neter/pkg/tsx"
 	"github.com/iancoleman/strcase"
 	"github.com/spf13/cobra"
 	"golang.org/x/tools/go/ast/astutil"
+
+	"github.com/Xwudao/neter/pkg/filex"
+	"github.com/Xwudao/neter/pkg/typex"
 
 	"github.com/Xwudao/neter/internal/tpl"
 	"github.com/Xwudao/neter/internal/visitor"
@@ -500,7 +501,7 @@ var genTsCmd = &cobra.Command{
 
 		for _, file := range files {
 			log.Println("file: ", file)
-			rtn, err := tsx.ParseLog(file)
+			rtn, err := typex.ParseLog(file)
 			if err != nil {
 				log.Printf("parse log file [%s] error: %s\n", file, err.Error())
 				continue
@@ -509,7 +510,7 @@ var genTsCmd = &cobra.Command{
 			tsFilename := strings.ReplaceAll(file, ".log", ".ts")
 			log.Println("tsFilename: ", tsFilename)
 
-			err = tsx.GenTs(tsFilename, rtn)
+			err = typex.WriteTs(tsFilename, rtn)
 			utils.CheckErrWithStatus(err)
 		}
 

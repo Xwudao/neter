@@ -1,4 +1,4 @@
-package tsx
+package typex
 
 import (
 	"bytes"
@@ -11,9 +11,19 @@ import (
 	"github.com/iancoleman/strcase"
 )
 
-func ParseLog(fp string) ([]string, error) {
-	var rtn []string
+type LogData struct {
+	Path     string
+	Query    string
+	QueryMap map[string]any
 
+	Name    string
+	Method  string
+	ReqBody string
+	ResBody string
+}
+
+func ParseLogData(fp string) (*LogData, error) {
+	var rtn = LogData{QueryMap: make(map[string]any)}
 	f, err := os.OpenFile(fp, os.O_RDONLY, os.ModePerm)
 	if err != nil {
 		return nil, err
@@ -24,15 +34,6 @@ func ParseLog(fp string) ([]string, error) {
 	if err != nil {
 		return nil, err
 	}
-
-	var (
-		path       string
-		query      string
-		method     string
-		name       string
-		reqBodyStr string
-		resBodyStr string
-	)
 
 	strData := string(data)
 	strArr := strings.Split(strData, "\n")
@@ -46,18 +47,29 @@ func ParseLog(fp string) ([]string, error) {
 		cnt := hd[1]
 		switch strings.TrimSpace(head) {
 		case "path":
-			path = strings.TrimSpace(cnt)
+			rtn.Path = strings.TrimSpace(cnt)
 		case "query":
-			query = strings.TrimSpace(cnt)
+			rtn.Query = strings.TrimSpace(cnt)
 		case "method":
-			method = strings.ToLower(strings.TrimSpace(cnt))
+			rtn.Method = strings.ToLower(strings.TrimSpace(cnt))
 		case "name":
-			name = strings.TrimSpace(cnt)
+			rtn.Name = strings.TrimSpace(cnt)
 		case "reqbody":
-			reqBodyStr = strings.TrimSpace(cnt)
+			rtn.ReqBody = strings.TrimSpace(cnt)
 		case "resbody":
-			resBodyStr = strings.TrimSpace(cnt)
+			rtn.ResBody = strings.TrimSpace(cnt)
 		}
+	}
+
+	return &rtn, nil
+}
+
+func ParseLog(fp string) ([]string, error) {
+	var rtn []string
+
+	var rtnData, err = ParseLogData(fp)
+	if err != nil {
+		return nil, err
 	}
 
 	var (
@@ -65,12 +77,12 @@ func ParseLog(fp string) ([]string, error) {
 		reqName   string
 		resName   string
 
-		upperName = strcase.ToCamel(name)
+		upperName = strcase.ToCamel(rtnData.Name)
 	)
 
-	if query != "" {
-		queryName = strcase.ToCamel(method + fmt.Sprintf("%sQuery", upperName))
-		qJ, err := query2JsonStr(query)
+	if rtnData.Query != "" {
+		queryName = strcase.ToCamel(rtnData.Method + fmt.Sprintf("%sQuery", upperName))
+		qJ, err := query2JsonStr(rtnData.Query)
 		if err != nil {
 			return nil, err
 		}
@@ -81,25 +93,25 @@ func ParseLog(fp string) ([]string, error) {
 		rtn = append(rtn, qTs)
 	}
 
-	if reqBodyStr != "" {
-		reqName = strcase.ToCamel(method + fmt.Sprintf("%sReq", upperName))
-		reqTs, err := jsonToTypeScriptInterface(reqBodyStr, reqName)
+	if rtnData.ReqBody != "" {
+		reqName = strcase.ToCamel(rtnData.Method + fmt.Sprintf("%sReq", upperName))
+		reqTs, err := jsonToTypeScriptInterface(rtnData.ReqBody, reqName)
 		if err != nil {
 			return nil, err
 		}
 		rtn = append(rtn, reqTs)
 	}
 
-	if resBodyStr != "" {
-		resName = strcase.ToCamel(method + fmt.Sprintf("%sRes", upperName))
-		resTs, err := jsonToTypeScriptInterface(resBodyStr, resName)
+	if rtnData.ResBody != "" {
+		resName = strcase.ToCamel(rtnData.Method + fmt.Sprintf("%sRes", upperName))
+		resTs, err := jsonToTypeScriptInterface(rtnData.ResBody, resName)
 		if err != nil {
 			return nil, err
 		}
 		rtn = append(rtn, resTs)
 	}
 
-	mtd := generateMethod(path, name, method, reqName, queryName, resName)
+	mtd := generateMethod(rtnData.Path, rtnData.Name, rtnData.Method, reqName, queryName, resName)
 	if mtd != "" {
 		rtn = append(rtn, mtd)
 	}

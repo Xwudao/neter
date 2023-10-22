@@ -1,4 +1,4 @@
-package tsx
+package typex
 
 import (
 	"encoding/json"
@@ -88,29 +88,3 @@ func query2JsonStr(queryString string) (string, error) {
 
 	return string(jsonData), nil
 }
-
-//func main() {
-//	jsonStr := `{
-//		"name": "John",
-//		"age": 30,
-//		"active": true,
-//		"address": {
-//			"street": "123 Main St",
-//			"city": "Anytown"
-//		},
-//		"arr": [
-//			{
-//				"age": 12,
-//				"name": "12"
-//			},
-//			{
-//				"age": 13,
-//				"name": "13"
-//			}
-//		]
-//	}`
-//	interfaceName := "Person"
-//
-//	tsInterface := jsonToTypeScriptInterface(jsonStr, interfaceName)
-//	fmt.Println(tsInterface)
-//}

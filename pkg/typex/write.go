@@ -1,11 +1,11 @@
-package tsx
+package typex
 
 import (
 	"errors"
 	"os"
 )
 
-func GenTs(fp string, rtn []string) error {
+func WriteTs(fp string, rtn []string) error {
 	f, err := os.OpenFile(fp, os.O_CREATE|os.O_WRONLY|os.O_TRUNC, os.ModePerm)
 	if err != nil {
 		return err
