@@ -466,24 +466,21 @@ var genCmdCmd = &cobra.Command{
 }
 
 var genTsCmd = &cobra.Command{
-	Use:   "ts",
-	Short: "generate typescript interface",
-	Long:  `generate typescript interface`,
+	Use:   "tp",
+	Short: "generate types",
+	Long:  `generate types`,
 	Run: func(cmd *cobra.Command, args []string) {
 		//force, _ := cmd.Flags().GetBool("force")
+		genTs, _ := cmd.Flags().GetBool("ts")
+		genGo, _ := cmd.Flags().GetBool("go")
+
 		log.SetPrefix("[gen] ")
 		dir, _ := os.Getwd()
 
-		// 获取当前目录下的build文件夹里面的.log文件，解析出：
-		/**
-		path:
-		query:
-		name:
-		method:
-		reqbody:
-		resbody:
-		*/
-		// 生成对应的interface
+		if !genTs && !genGo {
+			log.Println("please specify type")
+			return
+		}
 
 		// 1. 获取当前目录下的build文件夹里面的.log文件
 		buildDir := filepath.Join(dir, "build")
@@ -501,17 +498,33 @@ var genTsCmd = &cobra.Command{
 
 		for _, file := range files {
 			log.Println("file: ", file)
-			rtn, err := typex.ParseLog(file)
-			if err != nil {
-				log.Printf("parse log file [%s] error: %s\n", file, err.Error())
-				continue
+			if genTs {
+				rtn, err := typex.Parse2Ts(file)
+				if err != nil {
+					log.Printf("parse log file [%s] error: %s\n", file, err.Error())
+					continue
+				}
+
+				tsFilename := strings.ReplaceAll(file, ".log", ".ts")
+				log.Println("tsFilename: ", tsFilename)
+
+				err = typex.WriteGen(tsFilename, rtn)
+				utils.CheckErrWithStatus(err)
 			}
+			if genGo {
+				var goRtn []string
+				goRtn, err = typex.Parse2Go(file)
+				if err != nil {
+					log.Printf("parse log file [%s] error: %s\n", file, err.Error())
+					continue
+				}
 
-			tsFilename := strings.ReplaceAll(file, ".log", ".ts")
-			log.Println("tsFilename: ", tsFilename)
+				goFilename := strings.ReplaceAll(file, ".log", ".go")
+				log.Println("goFilename: ", goFilename)
 
-			err = typex.WriteTs(tsFilename, rtn)
-			utils.CheckErrWithStatus(err)
+				err = typex.WriteGen(goFilename, goRtn)
+				utils.CheckErrWithStatus(err)
+			}
 		}
 
 	},
@@ -645,6 +658,8 @@ func init() {
 	genCmdCmd.Flags().StringP("name", "n", "", "name of gen")
 	_ = genCmdCmd.MarkFlagRequired("name")
 
-	genTsCmd.Flags().BoolP("force", "f", false, "force generate ts interface")
+	//genTsCmd.Flags().BoolP("force", "f", false, "force generate ts interface")
+	genTsCmd.Flags().Bool("ts", false, "generate typescript interface")
+	genTsCmd.Flags().Bool("go", false, "generate go api client")
 
 }

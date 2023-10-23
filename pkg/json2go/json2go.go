@@ -13,6 +13,10 @@ type Json2Go struct {
 	AllCapsWords []string
 }
 
+func NewJson2Go(typeName string, allCapsWords ...string) *Json2Go {
+	return &Json2Go{TypeName: typeName, AllCapsWords: allCapsWords}
+}
+
 // GenerateCode generates a Go type definition from a JSON string as jen.Code.
 func (o Json2Go) GenerateCode(json string) (jen.Code, error) {
 	return def.From(json, o.AllCapsWords...).Declare(o.TypeName)

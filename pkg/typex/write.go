@@ -5,7 +5,7 @@ import (
 	"os"
 )
 
-func WriteTs(fp string, rtn []string) error {
+func WriteGen(fp string, rtn []string) error {
 	f, err := os.OpenFile(fp, os.O_CREATE|os.O_WRONLY|os.O_TRUNC, os.ModePerm)
 	if err != nil {
 		return err

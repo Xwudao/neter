@@ -1,90 +1,112 @@
 package typex
 
 import (
-	"encoding/json"
+	"bytes"
 	"fmt"
-	"net/url"
 	"strings"
+	"text/template"
+
+	"github.com/iancoleman/strcase"
 )
 
-func jsonToTypeScriptInterface(jsonStr string, interfaceName string) (string, error) {
-	var jsonData map[string]interface{}
-	err := json.Unmarshal([]byte(jsonStr), &jsonData)
+func Parse2Ts(fp string) ([]string, error) {
+	var rtn []string
+
+	var rtnData, err = ParseLogData(fp)
 	if err != nil {
-		return "", err
+		return nil, err
 	}
 
-	var typeScriptCode strings.Builder
-	typeScriptCode.WriteString(fmt.Sprintf("export interface %s {\n", interfaceName))
-	generateTypeScriptCode(&typeScriptCode, jsonData)
-	typeScriptCode.WriteString("}\n")
+	var (
+		queryName string
+		reqName   string
+		resName   string
 
-	return typeScriptCode.String(), nil
+		upperName = strcase.ToCamel(rtnData.Name)
+	)
+
+	if rtnData.Query != "" {
+		queryName = strcase.ToCamel(rtnData.Method + fmt.Sprintf("%sQuery", upperName))
+		qJ, err := query2JsonStr(rtnData.Query)
+		if err != nil {
+			return nil, err
+		}
+		qTs, err := jsonToTypeScriptInterface(qJ, queryName)
+		if err != nil {
+			return nil, err
+		}
+		rtn = append(rtn, qTs)
+	}
+
+	if rtnData.ReqBody != "" {
+		reqName = strcase.ToCamel(rtnData.Method + fmt.Sprintf("%sReq", upperName))
+		reqTs, err := jsonToTypeScriptInterface(rtnData.ReqBody, reqName)
+		if err != nil {
+			return nil, err
+		}
+		rtn = append(rtn, reqTs)
+	}
+
+	if rtnData.ResBody != "" {
+		resName = strcase.ToCamel(rtnData.Method + fmt.Sprintf("%sRes", upperName))
+		resTs, err := jsonToTypeScriptInterface(rtnData.ResBody, resName)
+		if err != nil {
+			return nil, err
+		}
+		rtn = append(rtn, resTs)
+	}
+
+	mtd := generateMethod(rtnData.Path, rtnData.Name, rtnData.Method, reqName, queryName, resName)
+	if mtd != "" {
+		rtn = append(rtn, mtd)
+	}
+
+	return rtn, nil
 }
 
-func generateTypeScriptCode(code *strings.Builder, data map[string]interface{}) {
-	for key, value := range data {
-		code.WriteString(fmt.Sprintf("  %s: ", key))
+func generateMethod(path, name, method, reqName, queryName, resName string) string {
+	var strTemplate = `const {{.MethodName}} = ({{.ReqParams}}) => {
+  return request<{{.ResName}}>({
+    url: '{{.Path}}',
+    method: '{{.Method}}',
+	{{if .ReqName -}}	data: payload, {{- end -}}
+	{{if .QueryName -}} params: query, {{- end}}
+  });
+};`
 
-		switch value.(type) {
-		case string:
-			code.WriteString("string;\n")
-		case float64:
-			code.WriteString("number;\n")
-		case bool:
-			code.WriteString("boolean;\n")
-		case map[string]interface{}:
-			code.WriteString("{\n")
-			generateTypeScriptCode(code, value.(map[string]interface{}))
-			code.WriteString("  };\n")
-		case []interface{}:
-			code.WriteString("Array<")
-			if len(value.([]interface{})) > 0 {
-				switch value.([]interface{})[0].(type) {
-				case string:
-					code.WriteString("string>;\n")
-				case float64:
-					code.WriteString("number>;\n")
-				case bool:
-					code.WriteString("boolean>;\n")
-				case map[string]interface{}:
-					code.WriteString("{\n")
-					generateTypeScriptCode(code, value.([]interface{})[0].(map[string]interface{}))
-					code.WriteString("  }>;\n")
-				}
-			} else {
-				code.WriteString("any>;\n")
-			}
-		case nil:
-			code.WriteString("null;\n")
-		}
+	var reqParamsBuilder = strings.Builder{}
+	if queryName != "" {
+		reqParamsBuilder.WriteString("query: " + queryName)
+		reqParamsBuilder.WriteString(", ")
 	}
-}
-func query2JsonStr(queryString string) (string, error) {
-	// 将查询字符串解析为URL.Values
-	queryValues, err := url.ParseQuery(queryString)
+	if reqName != "" {
+		reqParamsBuilder.WriteString("payload: " + reqName)
+		reqParamsBuilder.WriteString(", ")
+	}
+
+	var reqParams = strings.TrimRight(reqParamsBuilder.String(), ", ")
+
+	var data = map[string]any{
+		"Path":       path,
+		"Method":     method,
+		"ReqName":    reqName,
+		"ReqParams":  reqParams,
+		"MethodName": fmt.Sprintf("%sApi%s", strings.ToLower(method), strcase.ToCamel(name)),
+		"ResName":    resName,
+		"QueryName":  queryName,
+	}
+
+	var res bytes.Buffer
+
+	temp, err := template.New("ts-mt").Parse(strTemplate)
 	if err != nil {
-		return "", err
+		return ""
 	}
 
-	// 创建一个map来存储查询参数
-	queryParams := make(map[string]interface{})
-
-	// 遍历URL.Values并处理多个值的情况
-	for key, values := range queryValues {
-		if len(values) == 1 {
-			queryParams[key] = values[0]
-		} else {
-			// 如果有多个值，将它们保存为切片
-			queryParams[key] = values
-		}
-	}
-
-	// 将map转换为JSON字符串
-	jsonData, err := json.Marshal(queryParams)
+	err = temp.Execute(&res, data)
 	if err != nil {
-		return "", err
+		return ""
 	}
 
-	return string(jsonData), nil
+	return res.String()
 }
