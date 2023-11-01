@@ -10,6 +10,10 @@ import (
 	"github.com/iancoleman/strcase"
 )
 
+var checkTemplate = `func (r *{{.RespName}}) IsSuccess() bool {
+	return r.Code == 200
+}`
+
 var goTemplate = `package client
 
 import (
@@ -18,16 +22,16 @@ import (
 	"github.com/imroc/req/v3"
 )
 
-type ApiClient struct {
+type {{.ClientName}} struct {
 	r *req.Client
 }
 
-func NewApiClient() *ApiClient {
+func New{{.ClientName}}() *{{.ClientName}} {
 	var r = req.NewClient().SetTimeout(10 * time.Second){{if .ModName}}.SetUserAgent("{{.ModName}}"){{end}}
-	return &ApiClient{r: r}
+	return &{{.ClientName}}{r: r}
 }
 
-func (c *ApiClient) {{.MethodName}}({{if .HasReq}}data *{{.ReqName}} {{end -}}) (*{{.RespName}}, error) {
+func (c *{{.ClientName}}) {{.MethodName}}({{if .HasReq}}data *{{.ReqName}} {{end -}}) (*{{.RespName}}, error) {
 	var respData = new({{.RespName}})
 
 	var builder = c.r.R()
@@ -47,7 +51,7 @@ func (c *ApiClient) {{.MethodName}}({{if .HasReq}}data *{{.ReqName}} {{end -}}) 
 	return respData, nil
 }`
 
-func Parse2Go(fp string) ([]string, error) {
+func Parse2Go(fp string, clientName string) ([]string, error) {
 	var rtnStr []string
 
 	var rtnData, err = ParseLogData(fp)
@@ -56,6 +60,7 @@ func Parse2Go(fp string) ([]string, error) {
 	}
 
 	var mapData = map[string]any{
+		"ClientName": clientName,
 		"MethodName": fmt.Sprintf(`%sApi%s`, strcase.ToCamel(rtnData.Method), strcase.ToCamel(rtnData.Name)),
 		"ReqMethod":  strcase.ToCamel(rtnData.Method),
 		"HasReq":     rtnData.ReqBody != "",
@@ -94,8 +99,29 @@ func Parse2Go(fp string) ([]string, error) {
 		resResult, err := json2Go.Generate(rtnData.ResBody)
 		if err == nil {
 			rtnStr = append(rtnStr, resResult)
+			metData, err := GenerateCheckMethod(mapData["RespName"].(string))
+			if err == nil {
+				rtnStr = append(rtnStr, metData)
+			}
 		}
 	}
 
 	return rtnStr, nil
+}
+
+// GenerateCheckMethod generate check response is success method
+func GenerateCheckMethod(respName string) (string, error) {
+	tpl, err := template.New("gen-go-check").Parse(checkTemplate)
+	if err != nil {
+		return "", err
+	}
+
+	var buf = new(bytes.Buffer)
+	if err := tpl.Execute(buf, map[string]any{
+		"RespName": respName,
+	}); err != nil {
+		return "", err
+	}
+
+	return buf.String(), nil
 }

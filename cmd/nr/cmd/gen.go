@@ -473,6 +473,7 @@ var genTsCmd = &cobra.Command{
 		//force, _ := cmd.Flags().GetBool("force")
 		genTs, _ := cmd.Flags().GetBool("ts")
 		genGo, _ := cmd.Flags().GetBool("go")
+		clientName, _ := cmd.Flags().GetString("name")
 
 		log.SetPrefix("[gen] ")
 		dir, _ := os.Getwd()
@@ -513,7 +514,7 @@ var genTsCmd = &cobra.Command{
 			}
 			if genGo {
 				var goRtn []string
-				goRtn, err = typex.Parse2Go(file)
+				goRtn, err = typex.Parse2Go(file, strcase.ToCamel(clientName))
 				if err != nil {
 					log.Printf("parse log file [%s] error: %s\n", file, err.Error())
 					continue
@@ -661,5 +662,6 @@ func init() {
 	//genTsCmd.Flags().BoolP("force", "f", false, "force generate ts interface")
 	genTsCmd.Flags().Bool("ts", false, "generate typescript interface")
 	genTsCmd.Flags().Bool("go", false, "generate go api client")
+	genTsCmd.Flags().StringP("name", "n", "ApiClient", "name of client")
 
 }
