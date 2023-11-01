@@ -6,6 +6,7 @@ import (
 	"text/template"
 
 	"github.com/Xwudao/neter/pkg/json2go"
+	"github.com/Xwudao/neter/pkg/utils"
 	"github.com/iancoleman/strcase"
 )
 
@@ -22,7 +23,7 @@ type ApiClient struct {
 }
 
 func NewApiClient() *ApiClient {
-	var r = req.NewClient().SetTimeout(10 * time.Second)
+	var r = req.NewClient().SetTimeout(10 * time.Second){{if .ModName}}.SetUserAgent("{{.ModName}}"){{end}}
 	return &ApiClient{r: r}
 }
 
@@ -63,6 +64,8 @@ func Parse2Go(fp string) ([]string, error) {
 		"RespName":   fmt.Sprintf(`%sApi%sResp`, strcase.ToCamel(rtnData.Method), strcase.ToCamel(rtnData.Name)),
 		"Path":       rtnData.Path,
 		"QueryMap":   rtnData.QueryMap,
+
+		"ModName": utils.GetModName(),
 	}
 
 	var tpl = template.New("gen-go")
