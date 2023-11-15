@@ -36,6 +36,7 @@ var runCmd = &cobra.Command{
 		win := runtime.GOOS == "windows"
 		name := cmd.Flag("name").Value.String()
 		del, _ := cmd.Flags().GetBool("delete")
+		rmBuild, _ := cmd.Flags().GetBool("rm")
 		wire, _ := cmd.Flags().GetBool("wire")
 		dir, _ := cmd.Flags().GetString("dir")
 		extraCmd, _ := cmd.Flags().GetString("cmd")
@@ -90,6 +91,15 @@ var runCmd = &cobra.Command{
 				return
 			}
 			log.Println(res)
+		}
+
+		// remove `build` directory
+		if rmBuild {
+			err := os.RemoveAll("build")
+			if err != nil {
+				log.Fatalf("delete build/ directory err: %s", err.Error())
+				return
+			}
 		}
 
 		// generate app
@@ -264,5 +274,6 @@ func init() {
 	runCmd.Flags().StringP("cmd", "c", "", "the extra args set to the application")
 	runCmd.Flags().StringP("name", "n", "main", "the generated app name")
 	runCmd.Flags().BoolP("wire", "w", false, "generate wire file")
+	runCmd.Flags().BoolP("rm", "r", false, "remove build/ directory")
 	runCmd.Flags().BoolP("delete", "d", false, "delete the generated app")
 }
