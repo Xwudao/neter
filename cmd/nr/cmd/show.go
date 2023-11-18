@@ -56,8 +56,7 @@ func (s *Show) ShowEnt() {
 
 	log.Println(schemaDir)
 	text, err := runWithDir("ent", schemaDir, nil, []string{"describe", "./ent/schema"}...)
-	log.Println()
-	log.Println(text)
+	fmt.Println(text)
 	utils.CheckErrWithStatus(err)
 
 }
