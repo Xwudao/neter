@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/url"
+	"strconv"
 	"strings"
 )
 
@@ -61,19 +62,29 @@ func generateTypeScriptCode(code *strings.Builder, data map[string]interface{}) 
 	}
 }
 
-func query2Map(queryString string) (map[string]any, error) {
-	// 创建一个map来存储查询参数
-	queryParams := make(map[string]any)
+func query2Map(queryString string) (map[string]interface{}, error) {
+	// 创建一个 map 来存储查询参数
+	queryParams := make(map[string]interface{})
 
 	queryValues, err := url.ParseQuery(queryString)
 	if err != nil {
 		return queryParams, err
 	}
 
-	// 遍历URL.Values并处理多个值的情况
+	// 遍历 URL.Values 并处理多个值的情况
 	for key, values := range queryValues {
 		if len(values) == 1 {
-			queryParams[key] = values[0]
+			// 尝试将值转换为数字
+			if num, err := strconv.ParseFloat(values[0], 64); err == nil {
+				// 如果可以成功转换为数字，则存储数字
+				queryParams[key] = num
+			} else if boolValue, err := strconv.ParseBool(values[0]); err == nil {
+				// 如果可以成功转换为布尔值，则存储布尔值
+				queryParams[key] = boolValue
+			} else {
+				// 否则，存储字符串值
+				queryParams[key] = values[0]
+			}
 		} else {
 			// 如果有多个值，将它们保存为切片
 			queryParams[key] = values
