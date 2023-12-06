@@ -4,12 +4,15 @@ Copyright © 2022 NAME HERE <EMAIL ADDRESS>
 package cmd
 
 import (
+	"bytes"
 	"fmt"
 	"log"
 	"path/filepath"
 	"strings"
+	"time"
 
 	"github.com/AlecAivazis/survey/v2"
+	"github.com/Xwudao/neter/pkg/utils"
 	"github.com/spf13/cobra"
 )
 
@@ -97,10 +100,14 @@ var buildCmd = &cobra.Command{
 				}
 				var buildArgs = []string{"build"}
 
+				var ldflags bytes.Buffer
+				ldflags.WriteString(`-ldflags=-s -w -extldflags '-static'`)
+				ldflags.WriteString(fmt.Sprintf(` -X 'main.buildTime=%s'`, time.Now().In(utils.CST).Format(time.DateTime)))
+
 				if dlv {
 					buildArgs = append(buildArgs, `-gcflags=all=-N -l`)
 				} else if trim {
-					buildArgs = append(buildArgs, "-trimpath", "-ldflags=-s -w -extldflags '-static'")
+					buildArgs = append(buildArgs, "-trimpath", ldflags.String())
 				}
 				// var buildArgs = []string{"build", "-trimpath", `-ldflags=-s -w -extldflags '-static'`, "-o", c.Name}
 				buildArgs = append(buildArgs, "-o", c.Name)
