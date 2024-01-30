@@ -5,7 +5,6 @@ package cmd
 
 import (
 	"bufio"
-	"bytes"
 	"context"
 	"fmt"
 	"io"
@@ -23,8 +22,10 @@ import (
 	"github.com/AlecAivazis/survey/v2"
 	"github.com/spf13/cobra"
 
+	"github.com/Xwudao/neter/internal/core"
 	"github.com/Xwudao/neter/pkg/parser"
 	"github.com/Xwudao/neter/pkg/proc"
+	"github.com/Xwudao/neter/pkg/utils"
 )
 
 // runCmd represents the run command
@@ -40,6 +41,8 @@ var runCmd = &cobra.Command{
 		wire, _ := cmd.Flags().GetBool("wire")
 		dir, _ := cmd.Flags().GetString("dir")
 		extraCmd, _ := cmd.Flags().GetString("cmd")
+		web, _ := cmd.Flags().GetBool("web")
+		pm, _ := cmd.Flags().GetString("pm")
 
 		if win {
 			name += ".exe"
@@ -85,7 +88,7 @@ var runCmd = &cobra.Command{
 		// generate wire
 		if wire {
 			log.Println("generating wire...")
-			if res, err = runWithDir("wire", buildPath, nil, "gen"); err != nil {
+			if res, err = core.RunWithDir("wire", buildPath, nil, "gen"); err != nil {
 				log.Println("\n" + res)
 				log.Fatalf("wire gen error: %v", err)
 				return
@@ -100,6 +103,20 @@ var runCmd = &cobra.Command{
 				log.Fatalf("delete build/ directory err: %s", err.Error())
 				return
 			}
+		}
+
+		// build web
+		if web {
+			log.Println("build with web assets")
+			b := core.NewBuildWeb(pm)
+			err := b.Check()
+			utils.CheckErrWithStatus(err)
+			err = b.Build()
+			utils.CheckErrWithStatus(err)
+			err = b.Copy()
+			utils.CheckErrWithStatus(err)
+
+			log.Println("build web assets success")
 		}
 
 		// generate app
@@ -184,27 +201,10 @@ func write(ctx context.Context, cancel context.CancelFunc, rd io.Reader) {
 }
 
 func run(name string, args ...string) (string, error) {
-	return runWithDir(name, "", nil, args...)
+	return core.RunWithDir(name, "", nil, args...)
 }
 func runEnv(name string, env []string, args ...string) (string, error) {
-	return runWithDir(name, "", env, args...)
-}
-func runWithDir(name string, dir string, env []string, args ...string) (string, error) {
-	cmd := exec.Command(name, args...)
-	if dir != "" {
-		cmd.Dir = dir
-	}
-	if len(env) > 0 {
-		cmd.Env = append(cmd.Environ(), env...)
-	}
-	var stdout, stderr bytes.Buffer
-	cmd.Stdout = &stdout
-	cmd.Stderr = &stderr
-	err := cmd.Run()
-	if err != nil {
-		return stderr.String(), err
-	}
-	return stdout.String(), nil
+	return core.RunWithDir(name, "", env, args...)
 }
 
 func find(base string) (map[string]string, error) {
@@ -276,4 +276,7 @@ func init() {
 	runCmd.Flags().BoolP("wire", "w", false, "generate wire file")
 	runCmd.Flags().BoolP("rm", "r", false, "remove build/ directory")
 	runCmd.Flags().BoolP("delete", "d", false, "delete the generated app")
+
+	runCmd.Flags().Bool("web", false, "build with web assets")
+	runCmd.Flags().String("pm", "pnpm", "the package manger")
 }

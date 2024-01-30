@@ -8,6 +8,7 @@ import (
 
 	"github.com/spf13/cobra"
 
+	"github.com/Xwudao/neter/internal/core"
 	"github.com/Xwudao/neter/pkg/utils"
 )
 
@@ -55,7 +56,7 @@ func (s *Show) ShowEnt() {
 	}
 
 	log.Println(schemaDir)
-	text, err := runWithDir("ent", schemaDir, nil, []string{"describe", "./ent/schema"}...)
+	text, err := core.RunWithDir("ent", schemaDir, nil, []string{"describe", "./ent/schema"}...)
 	fmt.Println(text)
 	utils.CheckErrWithStatus(err)
 

@@ -6,8 +6,10 @@ import (
 	"os"
 	"path/filepath"
 
-	"github.com/Xwudao/neter/pkg/utils"
 	"github.com/spf13/cobra"
+
+	"github.com/Xwudao/neter/internal/core"
+	"github.com/Xwudao/neter/pkg/utils"
 )
 
 // newCmd represents the new command
@@ -53,7 +55,7 @@ func (n *EntSchema) New(schemas []string) {
 	var args []string
 	args = append(args, "new")
 	args = append(args, schemas...)
-	text, err := runWithDir("ent", schemaDir, nil, args...)
+	text, err := core.RunWithDir("ent", schemaDir, nil, args...)
 	fmt.Println(text)
 	utils.CheckErrWithStatus(err)
 }

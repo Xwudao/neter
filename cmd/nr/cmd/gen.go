@@ -21,6 +21,7 @@ import (
 	"github.com/spf13/cobra"
 	"golang.org/x/tools/go/ast/astutil"
 
+	"github.com/Xwudao/neter/internal/core"
 	"github.com/Xwudao/neter/pkg/filex"
 	"github.com/Xwudao/neter/pkg/typex"
 
@@ -383,7 +384,7 @@ var genEntCmd = &cobra.Command{
 		runArgs := []string{"generate", "./ent", "-run", "entgo.io/ent/cmd/ent"}
 		log.Println("run args: ", strings.Join(runArgs, " "))
 
-		res, err := runWithDir("go", aimPath, env, runArgs...)
+		res, err := core.RunWithDir("go", aimPath, env, runArgs...)
 		if err != nil {
 			log.SetPrefix("[err]")
 		}

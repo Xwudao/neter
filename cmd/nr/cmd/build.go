@@ -7,14 +7,15 @@ import (
 	"bytes"
 	"fmt"
 	"log"
-	"os"
 	"path/filepath"
 	"strings"
 	"time"
 
 	"github.com/AlecAivazis/survey/v2"
-	"github.com/Xwudao/neter/pkg/utils"
 	"github.com/spf13/cobra"
+
+	"github.com/Xwudao/neter/internal/core"
+	"github.com/Xwudao/neter/pkg/utils"
 )
 
 // buildCmd represents the build command
@@ -72,12 +73,12 @@ var buildCmd = &cobra.Command{
 
 		if web {
 			log.Println("build with web assets")
-			b := NewBuildWeb(pm)
-			err := b.check()
+			b := core.NewBuildWeb(pm)
+			err := b.Check()
 			utils.CheckErrWithStatus(err)
-			err = b.build()
+			err = b.Build()
 			utils.CheckErrWithStatus(err)
-			err = b.copy()
+			err = b.Copy()
 			utils.CheckErrWithStatus(err)
 
 			log.Println("build web assets success")
@@ -153,69 +154,6 @@ var buildCmd = &cobra.Command{
 		}
 
 	},
-}
-
-type BuildWeb struct {
-	webDir    string
-	assetsDir string
-
-	frontRoot string
-
-	pm string // package manager
-}
-
-func NewBuildWeb(pm string) *BuildWeb {
-	return &BuildWeb{
-		webDir:    "./web/",
-		assetsDir: "./assets/",
-		pm:        pm,
-	}
-}
-
-func (b *BuildWeb) check() error {
-	wd, _ := os.Getwd()
-	fullPath := filepath.Join(wd, b.webDir)
-	err := utils.CheckFolder(fullPath)
-	if err != nil {
-		return err
-	}
-	b.frontRoot = fullPath
-
-	return nil
-}
-func (b *BuildWeb) build() error {
-	var res string
-	var err error
-	if res, err = runWithDir(b.pm, b.frontRoot, nil, "install"); err != nil {
-		log.Println("\n" + res)
-		log.Fatalf("npm install error: %v", err)
-		return err
-	}
-	log.Println("\n" + res)
-
-	if res, err = runWithDir(b.pm, b.frontRoot, nil, "run", "build"); err != nil {
-		log.Println("\n" + res)
-		log.Fatalf("npm build error: %v", err)
-		return err
-	}
-	log.Println("\n" + res)
-
-	return nil
-}
-
-// copy generated dist/ to ./assets/dist/, will delete assets/dist/ first
-func (b *BuildWeb) copy() error {
-	oldAssetsPath := filepath.Join(b.assetsDir, "dist")
-	if err := os.RemoveAll(oldAssetsPath); err != nil {
-		return err
-	}
-
-	webDistPath := filepath.Join(b.frontRoot, "dist")
-	if err := utils.CopyDir(webDistPath, oldAssetsPath); err != nil {
-		return err
-	}
-
-	return nil
 }
 
 func init() {

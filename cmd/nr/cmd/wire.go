@@ -8,8 +8,10 @@ import (
 	"os"
 	"path/filepath"
 
-	"github.com/Xwudao/neter/pkg/utils"
 	"github.com/spf13/cobra"
+
+	"github.com/Xwudao/neter/internal/core"
+	"github.com/Xwudao/neter/pkg/utils"
 )
 
 // wireCmd represents the wire command
@@ -45,7 +47,7 @@ func (w *wire) wire() {
 	for _, file := range files {
 		log.Printf("wire.go file found: %s\n", file)
 		dir := filepath.Dir(file)
-		if res, err := runWithDir("wire", dir, nil, "gen"); err != nil {
+		if res, err := core.RunWithDir("wire", dir, nil, "gen"); err != nil {
 			log.Println(res)
 			log.Printf("wire gen error: %v\n", err)
 			continue
