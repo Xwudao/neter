@@ -7,6 +7,7 @@ import (
 	"bytes"
 	"fmt"
 	"log"
+	"os"
 	"path/filepath"
 	"strings"
 	"time"
@@ -30,6 +31,8 @@ var buildCmd = &cobra.Command{
 		output, _ := cmd.Flags().GetString("output")
 		dlv, _ := cmd.Flags().GetBool("dlv")
 		trim, _ := cmd.Flags().GetBool("trim")
+		web, _ := cmd.Flags().GetBool("web")
+		pm, _ := cmd.Flags().GetString("pm")
 
 		log.SetPrefix("[build] ")
 		var (
@@ -41,6 +44,7 @@ var buildCmd = &cobra.Command{
 			log.Fatalf(err.Error())
 			return
 		}
+
 		var appRoot string
 		switch len(cmdPath) {
 		case 0:
@@ -65,6 +69,20 @@ var buildCmd = &cobra.Command{
 			}
 			appRoot = cmdPath[dir]
 		}
+
+		if web {
+			log.Println("build with web assets")
+			b := NewBuildWeb(pm)
+			err := b.check()
+			utils.CheckErrWithStatus(err)
+			err = b.build()
+			utils.CheckErrWithStatus(err)
+			err = b.copy()
+			utils.CheckErrWithStatus(err)
+
+			log.Println("build web assets success")
+		}
+
 		var buildPath = fmt.Sprintf("./%s/", appRoot)
 		if name == "" {
 			name = filepath.Base(appRoot)
@@ -112,7 +130,6 @@ var buildCmd = &cobra.Command{
 				// var buildArgs = []string{"build", "-trimpath", `-ldflags=-s -w -extldflags '-static'`, "-o", c.Name}
 				buildArgs = append(buildArgs, "-o", c.Name)
 				buildArgs = append(buildArgs, buildPath)
-				fmt.Println(buildArgs)
 
 				if err != nil {
 					log.Fatalf(err.Error())
@@ -138,6 +155,69 @@ var buildCmd = &cobra.Command{
 	},
 }
 
+type BuildWeb struct {
+	webDir    string
+	assetsDir string
+
+	frontRoot string
+
+	pm string // package manager
+}
+
+func NewBuildWeb(pm string) *BuildWeb {
+	return &BuildWeb{
+		webDir:    "./web/",
+		assetsDir: "./assets/",
+		pm:        pm,
+	}
+}
+
+func (b *BuildWeb) check() error {
+	wd, _ := os.Getwd()
+	fullPath := filepath.Join(wd, b.webDir)
+	err := utils.CheckFolder(fullPath)
+	if err != nil {
+		return err
+	}
+	b.frontRoot = fullPath
+
+	return nil
+}
+func (b *BuildWeb) build() error {
+	var res string
+	var err error
+	if res, err = runWithDir(b.pm, b.frontRoot, nil, "install"); err != nil {
+		log.Println("\n" + res)
+		log.Fatalf("npm install error: %v", err)
+		return err
+	}
+	log.Println("\n" + res)
+
+	if res, err = runWithDir(b.pm, b.frontRoot, nil, "run", "build"); err != nil {
+		log.Println("\n" + res)
+		log.Fatalf("npm build error: %v", err)
+		return err
+	}
+	log.Println("\n" + res)
+
+	return nil
+}
+
+// copy generated dist/ to ./assets/dist/, will delete assets/dist/ first
+func (b *BuildWeb) copy() error {
+	oldAssetsPath := filepath.Join(b.assetsDir, "dist")
+	if err := os.RemoveAll(oldAssetsPath); err != nil {
+		return err
+	}
+
+	webDistPath := filepath.Join(b.frontRoot, "dist")
+	if err := utils.CopyDir(webDistPath, oldAssetsPath); err != nil {
+		return err
+	}
+
+	return nil
+}
+
 func init() {
 	rootCmd.AddCommand(buildCmd)
 
@@ -160,4 +240,6 @@ func init() {
 	buildCmd.Flags().StringP("output", "o", "", "the output filename, this option only works when building one binary")
 	buildCmd.Flags().Bool("dlv", false, "generate binary app can be debugged by dlv")
 	buildCmd.Flags().Bool("trim", false, "trim the path and other infos")
+	buildCmd.Flags().Bool("web", false, "build with web assets")
+	buildCmd.Flags().String("pm", "pnpm", "the package manger")
 }
