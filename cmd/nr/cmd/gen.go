@@ -381,7 +381,7 @@ var genEntCmd = &cobra.Command{
 		}
 
 		env := os.Environ()
-		runArgs := []string{"generate", "./ent", "-run", "entgo.io/ent/cmd/ent"}
+		runArgs := []string{"generate", "./ent"}
 		log.Println("run args: ", strings.Join(runArgs, " "))
 
 		res, err := core.RunWithDir("go", aimPath, env, runArgs...)
