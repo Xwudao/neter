@@ -212,7 +212,11 @@ func (g *GenerateRoute) updateRoot() {
 
 	// update imports
 	pkgName := fmt.Sprintf("%s/internal/routes/%s", g.ModName, g.PackageName)
-	_ = astutil.AddNamedImport(fset, f, g.PackageName, pkgName)
+	if strings.HasPrefix(g.PackageName, "v") {
+		_ = astutil.AddNamedImport(fset, f, g.PackageName, pkgName)
+	} else {
+		_ = astutil.AddImport(fset, f, pkgName)
+	}
 	// if !added {
 	//	utils.CheckErrWithStatus(fmt.Errorf("can't add import [%s]", pkgName))
 	// }
@@ -316,7 +320,11 @@ func (g *GenerateRoute) updateRouteProvider() {
 
 	// update imports
 	pkgName := fmt.Sprintf("%s/internal/routes/%s", g.ModName, g.PackageName)
-	_ = astutil.AddNamedImport(fset, f, g.PackageName, pkgName)
+	if strings.HasPrefix(g.PackageName, "v") {
+		_ = astutil.AddNamedImport(fset, f, g.PackageName, pkgName)
+	} else {
+		_ = astutil.AddImport(fset, f, pkgName)
+	}
 	// if !added {
 	//	utils.CheckErrWithStatus(fmt.Errorf("can't add import [%s]", pkgName))
 	// }
