@@ -7,6 +7,7 @@ import (
 	"bytes"
 	"fmt"
 	"log"
+	"os"
 	"path/filepath"
 	"strings"
 	"time"
@@ -34,6 +35,7 @@ var buildCmd = &cobra.Command{
 		trim, _ := cmd.Flags().GetBool("trim")
 		web, _ := cmd.Flags().GetBool("web")
 		pm, _ := cmd.Flags().GetString("pm")
+		html, _ := cmd.Flags().GetBool("html")
 
 		log.SetPrefix("[build] ")
 		var (
@@ -97,7 +99,7 @@ var buildCmd = &cobra.Command{
 		}{
 			{Name: name + "-linux", Type: "linux", Build: linux, Env: []string{"GOOS=linux", "GOARCH=" + arch}},
 			{Name: name + "-mac", Type: "mac", Build: mac, Env: []string{"GOOS=darwin", "GOARCH=" + arch}},
-			{Name: name + "-win" + ".exe", Type: "win", Build: win, Env: []string{"GOOS=windows", "GOARCH=" + arch}},
+			{Name: name + "-win.exe", Type: "win", Build: win, Env: []string{"GOOS=windows", "GOARCH=" + arch}},
 		}
 
 		// compute how many binaries to build
@@ -108,8 +110,11 @@ var buildCmd = &cobra.Command{
 			}
 		}
 
+		var buildAppName []string
+
 		for _, c := range Config {
 			if c.Build {
+				buildAppName = append(buildAppName, c.Name)
 				// generate app
 				log.Printf("building [%s] app", c.Type)
 				// var buildStr = fmt.Sprintf(`build -trimpath -ldflags "-s -w -extldflags '-static'" -o %s %s`, c.Name, buildPath)
@@ -153,6 +158,17 @@ var buildCmd = &cobra.Command{
 			}
 		}
 
+		if html {
+			log.Println("build web / template")
+			root, _ := os.Getwd()
+			bh := core.NewBuildHtml(root, buildAppName)
+			err := bh.Check()
+			utils.CheckErrWithStatus(err)
+			err = bh.Copy()
+			utils.CheckErrWithStatus(err)
+			log.Println("build web / template success")
+		}
+
 	},
 }
 
@@ -180,4 +196,5 @@ func init() {
 	buildCmd.Flags().Bool("trim", false, "trim the path and other infos")
 	buildCmd.Flags().Bool("web", false, "build with web assets")
 	buildCmd.Flags().String("pm", "pnpm", "the package manger")
+	buildCmd.Flags().Bool("html", false, "build with web / template")
 }
