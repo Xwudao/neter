@@ -40,19 +40,27 @@ func (b *BuildHtml) Check() error {
 }
 
 func (b *BuildHtml) Copy() error {
-	var buildWeb = filepath.Join(b.rootDir, "build/web")
-	if err := os.Mkdir(buildWeb, 0644); err != nil {
-		return err
-	}
-	// copy web/front to build/web
-	if err := os.CopyFS(filepath.Join(buildWeb, "front"), os.DirFS(b.frontDir)); err != nil {
-		return err
+
+	var aimDirs = []string{"front", "static", "public"}
+
+	// copy aimDirs to build/
+	for _, aim := range aimDirs {
+		var srcDir = filepath.Join(b.rootDir, "web", aim)
+		var destDir = filepath.Join(b.buildDir, "web", aim)
+		if err := os.CopyFS(destDir, os.DirFS(srcDir)); err != nil {
+			return err
+		}
 	}
 
-	// copy web/static to build/web
-	if err := os.CopyFS(filepath.Join(buildWeb, "static"), os.DirFS(b.staticDir)); err != nil {
-		return err
-	}
+	//// copy web/front to build/web
+	//if err := os.CopyFS(filepath.Join(finalDir, "front"), os.DirFS(b.frontDir)); err != nil {
+	//	return err
+	//}
+	//
+	//// copy web/static to build/web
+	//if err := os.CopyFS(filepath.Join(finalDir, "static"), os.DirFS(b.staticDir)); err != nil {
+	//	return err
+	//}
 
 	// copy appName to build/
 	for _, app := range b.appName {
