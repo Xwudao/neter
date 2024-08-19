@@ -12,6 +12,7 @@ import (
 
 
 	"{{.ModName}}/internal/core"
+	"{{.ModName}}/internal/data/ent/user"
 	"{{.ModName}}/internal/routes/mdw"
 )
 
@@ -43,7 +44,7 @@ func (r *{{.StructRouteName}}) Reg() {
 		// authGroup.GET("/auth", core.WrapData(r.{{.ToLowerCamel .Name}}()))
 		_ = authGroup
 	}
-	adminGroup := r.g.Group("/admin/{{.PackageName}}/{{.ToSnake .Name}}").Use(mdw.MustWithRoleMiddleware("admin"))
+	adminGroup := r.g.Group("/admin/{{.PackageName}}/{{.ToSnake .Name}}").Use(mdw.MustWithRoleMiddleware(user.RoleAdmin))
 	{
 		_ = adminGroup
 	}
