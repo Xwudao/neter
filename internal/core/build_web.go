@@ -64,7 +64,11 @@ func (b *BuildWeb) Copy() error {
 	}
 
 	webDistPath := filepath.Join(b.frontRoot, "dist")
-	if err := utils.CopyDir(webDistPath, oldAssetsPath); err != nil {
+	//if err := utils.CopyDir(webDistPath, oldAssetsPath); err != nil {
+	//	return err
+	//}
+
+	if err := os.CopyFS(oldAssetsPath, os.DirFS(webDistPath)); err != nil {
 		return err
 	}
 
