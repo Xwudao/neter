@@ -541,12 +541,13 @@ var genTsCmd = &cobra.Command{
 }
 
 type GenSubCmd struct {
-	Name       string
-	ModPath    string // root path
-	ModName    string // root mod name
-	StructName string // eg: HelloYouCmd
-	KebabName  string // eg: hello-you
-	SnakeName  string // eg: hello_you
+	Name            string
+	ModPath         string // root path
+	ModName         string // root mod name
+	StructName      string // eg: HelloYouCmd
+	LowerStructName string // eg: helloYouCmd
+	KebabName       string // eg: hello-you
+	SnakeName       string // eg: hello_you
 
 	StructAppName string // eg: HelloYouApp
 }
@@ -567,6 +568,7 @@ func (g *GenSubCmd) Gen() {
 
 func (g *GenSubCmd) updateFields() {
 	g.StructName = strcase.ToCamel(g.Name) + "Cmd"
+	g.LowerStructName = strcase.ToLowerCamel(g.Name) + "Cmd"
 	g.StructAppName = strcase.ToCamel(g.Name) + "App"
 	g.KebabName = strcase.ToKebab(g.Name)
 	g.SnakeName = strcase.ToSnake(g.Name)
@@ -624,7 +626,7 @@ func (g *GenSubCmd) updateWireFile() {
 	f, err := parser.ParseFile(fset, wireFilePath, nil, parser.ParseComments)
 	utils.CheckErrWithStatus(err)
 
-	wk := visitor.NewCmdWireVisitor(g.StructName, g.StructAppName)
+	wk := visitor.NewCmdWireVisitor(g.LowerStructName, g.StructName, g.StructAppName)
 	ast.Walk(wk, f)
 	wk.InsertInitCmdFunc(f)
 
