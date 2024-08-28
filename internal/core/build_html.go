@@ -52,20 +52,24 @@ func (b *BuildHtml) Copy() error {
 		}
 	}
 
-	//// copy web/front to build/web
-	//if err := os.CopyFS(filepath.Join(finalDir, "front"), os.DirFS(b.frontDir)); err != nil {
-	//	return err
-	//}
-	//
-	//// copy web/static to build/web
-	//if err := os.CopyFS(filepath.Join(finalDir, "static"), os.DirFS(b.staticDir)); err != nil {
-	//	return err
-	//}
-
 	// copy appName to build/
 	for _, app := range b.appName {
 		appDir := filepath.Join(b.rootDir, app)
 		if err := os.Rename(appDir, filepath.Join(b.buildDir, app)); err != nil {
+			return err
+		}
+	}
+
+	return nil
+}
+
+func (b *BuildHtml) Delete() error {
+	// delete don't need files in public
+	var files = []string{"robots.txt", "sitemap.xml"}
+	var publicDir = filepath.Join(b.buildDir, "web", "public")
+
+	for _, file := range files {
+		if err := os.Remove(filepath.Join(publicDir, file)); err != nil {
 			return err
 		}
 	}

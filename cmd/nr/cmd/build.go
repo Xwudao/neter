@@ -166,6 +166,8 @@ var buildCmd = &cobra.Command{
 			utils.CheckErrWithStatus(err)
 			err = bh.Copy()
 			utils.CheckErrWithStatus(err)
+			err = bh.Delete()
+			utils.CheckErrWithStatus(err)
 			log.Println("build web / template success")
 		}
 
