@@ -69,9 +69,7 @@ func (b *BuildHtml) Delete() error {
 	var publicDir = filepath.Join(b.buildDir, "web", "public")
 
 	for _, file := range files {
-		if err := os.Remove(filepath.Join(publicDir, file)); err != nil {
-			return err
-		}
+		_ = os.Remove(filepath.Join(publicDir, file))
 	}
 
 	return nil
