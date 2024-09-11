@@ -3,6 +3,9 @@ package core
 import (
 	"os"
 	"path/filepath"
+
+	"github.com/Xwudao/neter/pkg/utils"
+	"github.com/Xwudao/neter/pkg/varx"
 )
 
 type BuildHtml struct {
@@ -65,12 +68,32 @@ func (b *BuildHtml) Copy() error {
 
 func (b *BuildHtml) Delete() error {
 	// delete don't need files in public
-	var files = []string{"robots.txt", "sitemap.xml"}
-	var publicDir = filepath.Join(b.buildDir, "web", "public")
+	var needDelExts = []string{".txt", ".xml", ".svg"}
 
-	for _, file := range files {
-		_ = os.Remove(filepath.Join(publicDir, file))
+	var cleanFolders = []string{
+		filepath.Join(b.buildDir, "web", "public"),
+		filepath.Join(b.buildDir, "web", "static"),
 	}
+
+	for _, folder := range cleanFolders {
+		files := utils.LoadFiles(folder, func(filename string) bool {
+			var ext = filepath.Ext(filename)
+			if varx.ArrContains(needDelExts, ext) {
+				return true
+			}
+			return false
+		})
+
+		for _, file := range files {
+			_ = os.Remove(file)
+		}
+	}
+
+	//var publicDir = filepath.Join(b.buildDir, "web", "public")
+
+	//for _, file := range files {
+	//	_ = os.Remove(filepath.Join(publicDir, file))
+	//}
 
 	return nil
 }
