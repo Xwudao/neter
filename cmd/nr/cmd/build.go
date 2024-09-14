@@ -32,6 +32,7 @@ var buildCmd = &cobra.Command{
 		win, _ := cmd.Flags().GetBool("win")
 		output, _ := cmd.Flags().GetString("output")
 		dlv, _ := cmd.Flags().GetBool("dlv")
+		run, _ := cmd.Flags().GetBool("run")
 		trim, _ := cmd.Flags().GetBool("trim")
 		web, _ := cmd.Flags().GetBool("web")
 		pm, _ := cmd.Flags().GetString("pm")
@@ -154,6 +155,15 @@ var buildCmd = &cobra.Command{
 					log.Println("now, you can debug with dlv: ")
 					log.Printf(`dlv --listen=:2345 --headless=true --api-version=2 --accept-multiclient exec ./%s`, c.Name)
 
+					if run {
+						//env, err := runEnv("dlv", []string{}, "--listen=:2345", "--headless=true", "--api-version=2", "--accept-multiclient", "exec", c.Name)
+						err := core.RunAsync("dlv", "--listen=:2345", "--headless=true", "--api-version=2", "--accept-multiclient", "exec", c.Name)
+						if err != nil {
+							log.Fatalf("run dlv error: %v", err)
+							return
+						}
+					}
+
 				}
 			}
 		}
@@ -195,6 +205,7 @@ func init() {
 	buildCmd.Flags().StringP("name", "n", "", "the generated app name")
 	buildCmd.Flags().StringP("output", "o", "", "the output filename, this option only works when building one binary")
 	buildCmd.Flags().Bool("dlv", false, "generate binary app can be debugged by dlv")
+	buildCmd.Flags().BoolP("run", "r", false, "when generated dlv binary, run it")
 	buildCmd.Flags().Bool("trim", false, "trim the path and other infos")
 	buildCmd.Flags().Bool("web", false, "build with web assets")
 	buildCmd.Flags().String("pm", "pnpm", "the package manger")

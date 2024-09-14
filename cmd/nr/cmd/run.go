@@ -4,19 +4,13 @@ Copyright © 2022 NAME HERE <EMAIL ADDRESS>
 package cmd
 
 import (
-	"bufio"
-	"context"
 	"fmt"
-	"io"
 	"log"
 	"os"
-	"os/exec"
-	"os/signal"
 	"path"
 	"path/filepath"
 	"runtime"
 	"strings"
-	"syscall"
 	"time"
 
 	"github.com/AlecAivazis/survey/v2"
@@ -139,23 +133,6 @@ var runCmd = &cobra.Command{
 			log.Printf("extra args: %s\n", innerArgs)
 		}
 
-		// just run app
-		appPath := proc.SearchBinary(name)
-		runCmd := exec.Command(appPath, append(args, innerArgs...)...)
-		stdOutPipe, _ := runCmd.StdoutPipe()
-		stdErrPipe, _ := runCmd.StderrPipe()
-		if err := runCmd.Start(); err != nil {
-			log.Fatalf("failed to start cmd: %v", err)
-		}
-
-		ctx, cancel := context.WithCancel(context.Background())
-
-		go write(ctx, cancel, stdOutPipe)
-		go write(ctx, cancel, stdErrPipe)
-
-		quit := make(chan os.Signal, 1)
-		signal.Notify(quit, syscall.SIGINT, syscall.SIGTERM)
-
 		defer func() {
 			if del {
 				time.Sleep(time.Millisecond * 500)
@@ -167,37 +144,15 @@ var runCmd = &cobra.Command{
 			}
 		}()
 
-		for {
-			select {
-			case <-quit:
-				log.Println("quit")
-				cancel()
-				_ = runCmd.Process.Kill()
-				return
-			case <-ctx.Done():
-				log.Println("done")
-				return
-			}
-		}
-
-	},
-}
-
-func write(ctx context.Context, cancel context.CancelFunc, rd io.Reader) {
-	scanner := bufio.NewScanner(rd)
-	scanner.Split(bufio.ScanLines)
-	for {
-		select {
-		case <-ctx.Done():
+		// just run app
+		appPath := proc.SearchBinary(name)
+		err = core.RunAsync(appPath, append(args, innerArgs...)...)
+		if err != nil {
+			log.Fatalf("failed to start cmd: %v", err)
 			return
-		default:
 		}
-		for scanner.Scan() {
-			m := scanner.Text()
-			fmt.Println(m)
-		}
-		cancel()
-	}
+		log.Println("done!")
+	},
 }
 
 func run(name string, args ...string) (string, error) {
