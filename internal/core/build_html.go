@@ -2,6 +2,7 @@ package core
 
 import (
 	"os"
+	"path"
 	"path/filepath"
 
 	"github.com/Xwudao/neter/pkg/utils"
@@ -35,7 +36,12 @@ func (b *BuildHtml) Check() error {
 	}
 
 	// if buildDir not exist create it
-	if err := os.MkdirAll(b.buildDir, 0644); err != nil {
+	if err := os.MkdirAll(b.buildDir, 0755); err != nil {
+		return err
+	}
+
+	var buildWebDir = filepath.Join(b.buildDir, "web")
+	if err := os.MkdirAll(buildWebDir, 0755); err != nil {
 		return err
 	}
 
@@ -96,4 +102,13 @@ func (b *BuildHtml) Delete() error {
 	//}
 
 	return nil
+}
+
+// Tar tar buildDir to outputPath
+func (b *BuildHtml) Tar(filenames []string, outputPath string) error {
+	var files = []string{path.Join(b.buildDir, "web")}
+	for _, filename := range filenames {
+		files = append(files, path.Join(b.buildDir, filename))
+	}
+	return utils.Tar(files, outputPath)
 }

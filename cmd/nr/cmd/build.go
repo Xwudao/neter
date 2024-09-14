@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"log"
 	"os"
+	"path"
 	"path/filepath"
 	"strings"
 	"time"
@@ -177,6 +178,8 @@ var buildCmd = &cobra.Command{
 			err = bh.Copy()
 			utils.CheckErrWithStatus(err)
 			err = bh.Delete()
+			utils.CheckErrWithStatus(err)
+			err = bh.Tar(buildAppName, path.Join(root, "build", "web.tar.gz"))
 			utils.CheckErrWithStatus(err)
 			log.Println("build web / template success")
 		}
