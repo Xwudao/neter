@@ -38,6 +38,7 @@ var buildCmd = &cobra.Command{
 		web, _ := cmd.Flags().GetBool("web")
 		pm, _ := cmd.Flags().GetString("pm")
 		html, _ := cmd.Flags().GetBool("html")
+		cmdStr, _ := cmd.Flags().GetString("cmd")
 
 		log.SetPrefix("[build] ")
 		var (
@@ -154,11 +155,11 @@ var buildCmd = &cobra.Command{
 
 				if dlv {
 					log.Println("now, you can debug with dlv: ")
-					log.Printf(`dlv --listen=:2345 --headless=true --api-version=2 --accept-multiclient exec ./%s`, c.Name)
+					log.Printf(`dlv --listen=:2345 --headless=true --api-version=2 --accept-multiclient exec ./%s %s`, c.Name, cmdStr)
 
 					if run {
 						//env, err := runEnv("dlv", []string{}, "--listen=:2345", "--headless=true", "--api-version=2", "--accept-multiclient", "exec", c.Name)
-						err := core.RunAsync("dlv", "--listen=:2345", "--headless=true", "--api-version=2", "--accept-multiclient", "exec", c.Name)
+						err := core.RunAsync("dlv", "--listen=:2345", "--headless=true", "--api-version=2", "--accept-multiclient", "exec", c.Name, cmdStr)
 						if err != nil {
 							log.Fatalf("run dlv error: %v", err)
 							return
@@ -209,6 +210,7 @@ func init() {
 	buildCmd.Flags().StringP("output", "o", "", "the output filename, this option only works when building one binary")
 	buildCmd.Flags().Bool("dlv", false, "generate binary app can be debugged by dlv")
 	buildCmd.Flags().BoolP("run", "r", false, "when generated dlv binary, run it")
+	buildCmd.Flags().StringP("cmd", "c", "", "the command to attach to the dlv")
 	buildCmd.Flags().Bool("trim", false, "trim the path and other infos")
 	buildCmd.Flags().Bool("web", false, "build with web assets")
 	buildCmd.Flags().String("pm", "pnpm", "the package manger")
