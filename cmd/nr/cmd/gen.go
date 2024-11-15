@@ -41,9 +41,10 @@ var genCmd = &cobra.Command{
 		noRepo, _ := cmd.Flags().GetBool("no-repo")
 		v2, _ := cmd.Flags().GetBool("v2")
 		withCrud, _ := cmd.Flags().GetBool("with-crud")
+		withParams, _ := cmd.Flags().GetBool("with-params")
 		entName, _ := cmd.Flags().GetString("ent-name")
 
-		g := NewGenerate(name, tpe, withCrud, entName, v2)
+		g := NewGenerator(name, tpe, withCrud, entName, v2)
 
 		err := g.preCheck()
 		utils.CheckErrWithStatus(err)
@@ -63,6 +64,9 @@ var genCmd = &cobra.Command{
 				g.GenRepo()
 				g.updateRepoProvider()
 			}
+			if withParams {
+				g.GenParams()
+			}
 			utils.Info("generate biz success")
 		default:
 			utils.CheckErrWithStatus(errors.New("unknown type"))
@@ -71,7 +75,7 @@ var genCmd = &cobra.Command{
 	},
 }
 
-type GenerateRoute struct {
+type Generator struct {
 	RootPath        string
 	RouteNameSuffix string
 	PackageName     string
@@ -80,17 +84,19 @@ type GenerateRoute struct {
 	WithCRUD bool
 	EntName  string
 
-	routeTpl string
-	bizTpl   string
-	repoTpl  string
+	routeTpl     string
+	bizTpl       string
+	repoTpl      string
+	bizParamsTpl string
 
 	FilenameRouteSuffix string
 	FilenameBizSuffix   string
 	FilenameRepoSuffix  string
 
-	saveRouteFilePath string // eg: home_route.go
-	saveBizFilePath   string // eg: home_biz.go
-	saveRepoFilePath  string // eg: home_repo.go
+	saveRouteFilePath     string // eg: home_route.go
+	saveBizFilePath       string // eg: home_biz.go
+	saveRepoFilePath      string // eg: home_repo.go
+	saveBizParamsFilePath string // eg: home_params.go
 
 	Name     string // eg: home
 	TypeName string // eg: route, service, etc
@@ -103,11 +109,17 @@ type GenerateRoute struct {
 	StructRepoName  string // eg: HomeRepo
 }
 
-func NewGenerate(name string, typeName string, crud bool, entName string, v2 bool) *GenerateRoute {
-	return &GenerateRoute{Name: name, TypeName: typeName, WithCRUD: crud, EntName: entName, V2: v2}
+func NewGenerator(name string, typeName string, crud bool, entName string, v2 bool) *Generator {
+	return &Generator{
+		Name:     name,
+		TypeName: typeName,
+		WithCRUD: crud,
+		EntName:  entName,
+		V2:       v2,
+	}
 }
 
-func (g *GenerateRoute) preCheck() error {
+func (g *Generator) preCheck() error {
 	if g.WithCRUD && g.EntName == "" {
 		return errors.New("please specify ent name")
 	}
@@ -115,7 +127,7 @@ func (g *GenerateRoute) preCheck() error {
 	return nil
 }
 
-func (g *GenerateRoute) init() {
+func (g *Generator) init() {
 	g.FilenameRouteSuffix = "_routes.go"
 	g.FilenameBizSuffix = "_biz.go"
 	g.FilenameRepoSuffix = "_repo.go"
@@ -127,10 +139,12 @@ func (g *GenerateRoute) init() {
 	g.saveRouteFilePath = filepath.Join(g.RootPath, strcase.ToSnake(g.Name)+g.FilenameRouteSuffix)
 	g.saveBizFilePath = filepath.Join(g.RootPath, strcase.ToSnake(g.Name)+g.FilenameBizSuffix)
 	g.saveRepoFilePath = filepath.Join(filepath.Dir(g.RootPath), "data", strcase.ToSnake(g.Name)+g.FilenameRepoSuffix)
+	g.saveBizParamsFilePath = filepath.Join(g.RootPath, "../domain/params", strcase.ToSnake(g.Name)+"_params.go")
 
 	g.routeTpl = tpl.RouteTpl
 	g.bizTpl = tpl.BizTpl
 	g.repoTpl = tpl.RepoTpl
+	g.bizParamsTpl = tpl.BizParamsTpl
 
 	g.StructRouteName = strcase.ToCamel(g.Name + "Route")
 	g.StructBizName = strcase.ToCamel(g.Name + "Biz")
@@ -142,7 +156,7 @@ func (g *GenerateRoute) init() {
 	}
 }
 
-func (g *GenerateRoute) GenRoute() {
+func (g *Generator) GenRoute() {
 	g.checkFile(g.saveRouteFilePath)
 
 	parse, err := template.New("route").Parse(g.routeTpl)
@@ -160,7 +174,7 @@ func (g *GenerateRoute) GenRoute() {
 
 }
 
-func (g *GenerateRoute) GenBiz() {
+func (g *Generator) GenBiz() {
 	g.checkFile(g.saveBizFilePath)
 
 	parse, err := template.New("biz").Parse(g.bizTpl)
@@ -177,7 +191,27 @@ func (g *GenerateRoute) GenBiz() {
 	utils.CheckErrWithStatus(err)
 }
 
-func (g *GenerateRoute) GenRepo() {
+// GenParams generate params file
+func (g *Generator) GenParams() {
+	g.checkFile(g.saveBizParamsFilePath)
+
+	parse, err := template.New("params").Parse(g.bizParamsTpl)
+	utils.CheckErrWithStatus(err)
+
+	buffer := bytes.NewBuffer([]byte{})
+	err = parse.Execute(buffer, g)
+	utils.CheckErrWithStatus(err)
+
+	source, err := format.Source(buffer.Bytes())
+	utils.CheckErrWithStatus(err)
+
+	err = utils.SaveToFile(g.saveBizParamsFilePath, source, false)
+	utils.CheckErrWithStatus(err)
+
+	utils.Info("generate params success")
+}
+
+func (g *Generator) GenRepo() {
 	g.checkFile(g.saveRepoFilePath)
 
 	parse, err := template.New("repo").Parse(g.repoTpl)
@@ -194,7 +228,7 @@ func (g *GenerateRoute) GenRepo() {
 	utils.CheckErrWithStatus(err)
 }
 
-func (g *GenerateRoute) updateRoot() {
+func (g *Generator) updateRoot() {
 	utils.Info("updating root.go")
 	rootFilePath := filepath.Join(filepath.Dir(g.RootPath), "root.go")
 	exist := utils.CheckExist(rootFilePath)
@@ -236,7 +270,7 @@ func (g *GenerateRoute) updateRoot() {
 }
 
 // update biz provider
-func (g *GenerateRoute) updateBizProvider() {
+func (g *Generator) updateBizProvider() {
 	utils.Info("updating provider.go")
 	rootFilePath := filepath.Join(g.RootPath, "provider.go")
 	exist := utils.CheckExist(rootFilePath)
@@ -269,7 +303,7 @@ func (g *GenerateRoute) updateBizProvider() {
 }
 
 // update repo provider
-func (g *GenerateRoute) updateRepoProvider() {
+func (g *Generator) updateRepoProvider() {
 	utils.Info("updating provider.go")
 	rootFilePath := filepath.Join(filepath.Dir(g.RootPath), "data", "provider.go")
 	exist := utils.CheckExist(rootFilePath)
@@ -302,7 +336,7 @@ func (g *GenerateRoute) updateRepoProvider() {
 }
 
 // update route provider
-func (g *GenerateRoute) updateRouteProvider() {
+func (g *Generator) updateRouteProvider() {
 	utils.Info("updating provider.go")
 	rootFilePath := filepath.Join(filepath.Dir(g.RootPath), "provider.go")
 	exist := utils.CheckExist(rootFilePath)
@@ -344,7 +378,7 @@ func (g *GenerateRoute) updateRouteProvider() {
 	utils.Info("updating provider.go success")
 }
 
-func (g *GenerateRoute) checkFile(p string) {
+func (g *Generator) checkFile(p string) {
 	if _, err := os.Stat(p); err == nil {
 		utils.CheckErrWithStatus(errors.New("file already exists"))
 		return
@@ -353,22 +387,22 @@ func (g *GenerateRoute) checkFile(p string) {
 
 // template functions
 
-func (g *GenerateRoute) ToLowerCamel(str string) string {
+func (g *Generator) ToLowerCamel(str string) string {
 	return strcase.ToLowerCamel(str)
 }
 
-func (g *GenerateRoute) ToCamel(str string) string {
+func (g *Generator) ToCamel(str string) string {
 	return strcase.ToCamel(str)
 }
 
-func (g *GenerateRoute) ToSnake(str string) string {
+func (g *Generator) ToSnake(str string) string {
 	return strcase.ToSnake(str)
 }
 
-func (g *GenerateRoute) ToKebab(str string) string {
+func (g *Generator) ToKebab(str string) string {
 	return strcase.ToKebab(str)
 }
-func (g *GenerateRoute) ExtractInitials(str string) string {
+func (g *Generator) ExtractInitials(str string) string {
 	return utils.ExtractInitials(g.ToCamel(str))
 }
 
@@ -658,6 +692,7 @@ func init() {
 	genCmd.Flags().Bool("no-repo", false, "generate repo file")
 	genCmd.Flags().Bool("v2", false, "is v2")
 	genCmd.Flags().Bool("with-crud", false, "generate crud section in repo and biz file")
+	genCmd.Flags().Bool("with-params", false, "generate params file")
 	genCmd.Flags().String("ent-name", "", "generate crud section's ent name")
 	genCmd.Flags().StringP("name", "n", "", "name of gen")
 

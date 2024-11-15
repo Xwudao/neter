@@ -1,4 +1,4 @@
-{{- /*gotype: github.com/Xwudao/neter/cmd/nr/cmd.GenerateRoute*/ -}}
+{{- /*gotype: github.com/Xwudao/neter/cmd/nr/cmd.Generator*/ -}}
 package {{.PackageName}}
 
 import (
