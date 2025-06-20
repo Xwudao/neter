@@ -1,6 +1,3 @@
-/*
-Copyright © 2022 NAME HERE <EMAIL ADDRESS>
-*/
 package cmd
 
 import (
@@ -25,6 +22,7 @@ var buildCmd = &cobra.Command{
 	Use:   "build",
 	Short: "build the final binary",
 	Run: func(cmd *cobra.Command, args []string) {
+		start := time.Now() // 添加开始时间
 		name := cmd.Flag("name").Value.String()
 		arch := cmd.Flag("arch").Value.String()
 		dir, _ := cmd.Flags().GetString("dir")
@@ -140,10 +138,6 @@ var buildCmd = &cobra.Command{
 				buildArgs = append(buildArgs, "-o", c.Name)
 				buildArgs = append(buildArgs, buildPath)
 
-				if err != nil {
-					log.Fatalf(err.Error())
-					return
-				}
 				log.Println("build args: ", strings.Join(buildArgs, " "))
 
 				if res, err = runEnv("go", c.Env, buildArgs...); err != nil {
@@ -185,6 +179,9 @@ var buildCmd = &cobra.Command{
 			log.Println("build web / template success")
 		}
 
+		// 构建结束，输出耗时日志
+		elapsed := time.Since(start)
+		log.Printf("构建完成，耗时: %s", elapsed)
 	},
 }
 
