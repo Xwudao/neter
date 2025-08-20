@@ -31,18 +31,8 @@ var buildCmd = &cobra.Command{
 			log.Printf("[hook] warning: %v", err)
 		}
 
-		// Execute on_start hooks
-		if err := hookManager.ExecuteHooks("on_start"); err != nil {
-			log.Printf("[hook] warning: %v", err)
-		}
-
-		// Ensure on_stop hooks are executed even if build fails
-		defer func() {
-			if err := hookManager.ExecuteHooks("on_stop"); err != nil {
-				log.Printf("[hook] warning: %v", err)
-			}
-		}()
-
+		// Collect active flags
+		var activeFlags []string
 		name := cmd.Flag("name").Value.String()
 		arch := cmd.Flag("arch").Value.String()
 		dir, _ := cmd.Flags().GetString("dir")
@@ -58,18 +48,54 @@ var buildCmd = &cobra.Command{
 		html, _ := cmd.Flags().GetBool("html")
 		cmdStr, _ := cmd.Flags().GetString("cmd")
 
-		log.SetPrefix("[build] ")
-		var (
-			res string
-			err error
-		)
+		// Build active flags list
+		if linux {
+			activeFlags = append(activeFlags, "--linux")
+		}
+		if mac {
+			activeFlags = append(activeFlags, "--mac")
+		}
+		if win {
+			activeFlags = append(activeFlags, "--win")
+		}
+		if dlv {
+			activeFlags = append(activeFlags, "--dlv")
+		}
+		if run {
+			activeFlags = append(activeFlags, "--run")
+		}
+		if trim {
+			activeFlags = append(activeFlags, "--trim")
+		}
+		if web {
+			activeFlags = append(activeFlags, "--web")
+		}
+		if html {
+			activeFlags = append(activeFlags, "--html")
+		}
+
+		// Set active flags in hook manager
+		hookManager.SetActiveFlags(activeFlags)
+
+		// Execute on_start hooks
+		if err := hookManager.ExecuteHooks("on_start"); err != nil {
+			log.Printf("[hook] warning: %v", err)
+		}
+
+		// Ensure on_stop hooks are executed even if build fails
+		defer func() {
+			if err := hookManager.ExecuteHooks("on_stop"); err != nil {
+				log.Printf("[hook] warning: %v", err)
+			}
+		}()
+
+		var appRoot string
 		cmdPath, err := find("cmd")
 		if err != nil {
-			log.Fatalf(err.Error())
+			log.Fatal(err.Error())
 			return
 		}
 
-		var appRoot string
 		switch len(cmdPath) {
 		case 0:
 			log.Fatalf("please run in root project directory")
@@ -159,6 +185,11 @@ var buildCmd = &cobra.Command{
 				buildArgs = append(buildArgs, buildPath)
 
 				log.Println("build args: ", strings.Join(buildArgs, " "))
+
+				var (
+					res string
+					err error
+				)
 
 				if res, err = runEnv("go", c.Env, buildArgs...); err != nil {
 					log.Println("\n" + res)

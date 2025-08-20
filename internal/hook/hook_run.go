@@ -6,6 +6,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"slices"
 	"strings"
 
 	"gopkg.in/yaml.v3"
@@ -19,6 +20,8 @@ app:
 	hooks:
 		- event: "on_start"
 		  action: "xxx cmd to run, eg:　scripts/updatexx.bat"
+		  depends:
+		    - flags: ["--web"]
 		- event: "on_stop"
 		  action: "stop_app"
 
@@ -34,13 +37,19 @@ type AppConfig struct {
 }
 
 type HookItem struct {
-	Event  string `yaml:"event"`
-	Action string `yaml:"action"`
+	Event   string       `yaml:"event"`
+	Action  string       `yaml:"action"`
+	Depends *HookDepends `yaml:"depends,omitempty"`
+}
+
+type HookDepends struct {
+	Flags []string `yaml:"flags"`
 }
 
 type HookManager struct {
-	config HookConfig
-	loaded bool
+	config      HookConfig
+	loaded      bool
+	activeFlags []string
 }
 
 func NewHookManager() *HookManager {
@@ -67,6 +76,10 @@ func (h *HookManager) LoadConfig() error {
 	return nil
 }
 
+func (h *HookManager) SetActiveFlags(flags []string) {
+	h.activeFlags = flags
+}
+
 func (h *HookManager) ExecuteHooks(event string) error {
 	if !h.loaded || !h.config.App.Enabled {
 		return nil
@@ -74,6 +87,14 @@ func (h *HookManager) ExecuteHooks(event string) error {
 
 	for _, hook := range h.config.App.Hooks {
 		if hook.Event == event {
+			// Check dependencies
+			if hook.Depends != nil && len(hook.Depends.Flags) > 0 {
+				if !h.checkFlagDependencies(hook.Depends.Flags) {
+					log.Printf("[hook] skipping %s hook due to unmet flag dependencies: %v", event, hook.Depends.Flags)
+					continue
+				}
+			}
+
 			log.Printf("[hook] executing %s hook: %s", event, hook.Action)
 			if err := h.executeCommand(hook.Action); err != nil {
 				return fmt.Errorf("failed to execute %s hook: %v", event, err)
@@ -82,6 +103,16 @@ func (h *HookManager) ExecuteHooks(event string) error {
 	}
 
 	return nil
+}
+
+func (h *HookManager) checkFlagDependencies(requiredFlags []string) bool {
+	for _, required := range requiredFlags {
+		found := slices.Contains(h.activeFlags, required)
+		if !found {
+			return false
+		}
+	}
+	return true
 }
 
 func (h *HookManager) executeCommand(action string) error {
