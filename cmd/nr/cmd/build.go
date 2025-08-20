@@ -14,6 +14,7 @@ import (
 	"github.com/spf13/cobra"
 
 	"github.com/Xwudao/neter/internal/core"
+	"github.com/Xwudao/neter/internal/hook"
 	"github.com/Xwudao/neter/pkg/utils"
 )
 
@@ -23,6 +24,25 @@ var buildCmd = &cobra.Command{
 	Short: "build the final binary",
 	Run: func(cmd *cobra.Command, args []string) {
 		start := time.Now() // 添加开始时间
+
+		// Initialize hook manager
+		hookManager := hook.NewHookManager()
+		if err := hookManager.LoadConfig(); err != nil {
+			log.Printf("[hook] warning: %v", err)
+		}
+
+		// Execute on_start hooks
+		if err := hookManager.ExecuteHooks("on_start"); err != nil {
+			log.Printf("[hook] warning: %v", err)
+		}
+
+		// Ensure on_stop hooks are executed even if build fails
+		defer func() {
+			if err := hookManager.ExecuteHooks("on_stop"); err != nil {
+				log.Printf("[hook] warning: %v", err)
+			}
+		}()
+
 		name := cmd.Flag("name").Value.String()
 		arch := cmd.Flag("arch").Value.String()
 		dir, _ := cmd.Flags().GetString("dir")
