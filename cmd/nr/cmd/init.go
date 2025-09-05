@@ -21,6 +21,7 @@ import (
 
 	"github.com/spf13/cobra"
 
+	"github.com/Xwudao/neter/internal/core"
 	"github.com/Xwudao/neter/pkg/utils"
 )
 
@@ -42,7 +43,11 @@ var initCmd = &cobra.Command{
 		i.clone()
 		i.rewriteMod()
 		i.rmGit()
-		i.modTidy()
+		_, err := i.modTidy()
+		if err != nil {
+			cmd.PrintErrf("mod tidy err: %s\n", err.Error())
+			return
+		}
 
 		utils.Info("finished, happy hacking!")
 
@@ -190,21 +195,23 @@ func (i *InitProject) setModName() (err error) {
 		return
 	}
 
-	cnt, err := ioutil.ReadFile(i.modPath)
+	cnt, err := os.ReadFile(i.modPath)
 	if err != nil {
 		return
 	}
 	nCnt := strings.Replace(string(cnt), i.originModName, i.newModName, 1)
-	err = ioutil.WriteFile(i.modPath, []byte(nCnt), os.ModePerm)
+	err = os.WriteFile(i.modPath, []byte(nCnt), os.ModePerm)
 	if err != nil {
 		return
 	}
 	return nil
 }
 
-func (i *InitProject) modTidy() {
-	cmd := exec.Command("go", "mod", "tidy")
-	_ = cmd.Run()
+func (i *InitProject) modTidy() (string, error) {
+	//cmd := exec.Command("go", "mod", "tidy")
+	//_ = cmd.Run()
+
+	return core.RunWithDir("go", i.rootPath, nil, "mod", "tidy")
 }
 func init() {
 	rootCmd.AddCommand(initCmd)

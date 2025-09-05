@@ -12,6 +12,7 @@ import (
 
 	"github.com/AlecAivazis/survey/v2"
 	"github.com/spf13/cobra"
+	"github.com/spf13/pflag"
 
 	"github.com/Xwudao/neter/internal/core"
 	"github.com/Xwudao/neter/internal/hook"
@@ -25,14 +26,7 @@ var buildCmd = &cobra.Command{
 	Run: func(cmd *cobra.Command, args []string) {
 		start := time.Now() // 添加开始时间
 
-		// Initialize hook manager
-		hookManager := hook.NewHookManager()
-		if err := hookManager.LoadConfig(); err != nil {
-			log.Printf("[hook] warning: %v", err)
-		}
-
 		// Collect active flags
-		var activeFlags []string
 		name := cmd.Flag("name").Value.String()
 		arch := cmd.Flag("arch").Value.String()
 		dir, _ := cmd.Flags().GetString("dir")
@@ -45,34 +39,22 @@ var buildCmd = &cobra.Command{
 		trim, _ := cmd.Flags().GetBool("trim")
 		web, _ := cmd.Flags().GetBool("web")
 		pm, _ := cmd.Flags().GetString("pm")
-		html, _ := cmd.Flags().GetBool("html")
 		cmdStr, _ := cmd.Flags().GetString("cmd")
+		html, _ := cmd.Flags().GetBool("html")
 
-		// Build active flags list
-		if linux {
-			activeFlags = append(activeFlags, "--linux")
+		// Initialize hook manager
+		hookManager := hook.NewHookManager()
+		if err := hookManager.LoadConfig(); err != nil {
+			log.Printf("[hook] warning: %v", err)
 		}
-		if mac {
-			activeFlags = append(activeFlags, "--mac")
-		}
-		if win {
-			activeFlags = append(activeFlags, "--win")
-		}
-		if dlv {
-			activeFlags = append(activeFlags, "--dlv")
-		}
-		if run {
-			activeFlags = append(activeFlags, "--run")
-		}
-		if trim {
-			activeFlags = append(activeFlags, "--trim")
-		}
-		if web {
-			activeFlags = append(activeFlags, "--web")
-		}
-		if html {
-			activeFlags = append(activeFlags, "--html")
-		}
+
+		var activeFlags []string
+
+		cmd.Flags().VisitAll(func(f *pflag.Flag) {
+			if f.Changed {
+				activeFlags = append(activeFlags, fmt.Sprintf("--%s", f.Name))
+			}
+		})
 
 		// Set active flags in hook manager
 		hookManager.SetActiveFlags(activeFlags)
