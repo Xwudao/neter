@@ -7,6 +7,7 @@ import (
 	"os"
 	"path"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"time"
 
@@ -140,6 +141,7 @@ var buildCmd = &cobra.Command{
 		}
 
 		var buildAppName []string
+		gitHash, _ := core.GetGitHash()
 
 		for _, c := range Config {
 			if c.Build {
@@ -156,6 +158,8 @@ var buildCmd = &cobra.Command{
 				var ldflags bytes.Buffer
 				ldflags.WriteString(`-ldflags=-s -w -extldflags '-static'`)
 				ldflags.WriteString(fmt.Sprintf(` -X 'main.buildTime=%s'`, time.Now().In(utils.CST).Format(time.DateTime)))
+				ldflags.WriteString(fmt.Sprintf(` -X 'main.gitHash=%s'`, gitHash))
+				ldflags.WriteString(fmt.Sprintf(` -X 'main.goVersion=%s'`, runtime.Version()))
 
 				if dlv {
 					buildArgs = append(buildArgs, `-gcflags=all=-N -l`)
