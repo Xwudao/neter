@@ -141,6 +141,12 @@ var buildCmd = &cobra.Command{
 		}
 
 		var buildAppName []string
+
+		// Execute before_binary hooks
+		if err := hookManager.ExecuteHooks("before_binary"); err != nil {
+			log.Printf("[hook] warning: %v", err)
+		}
+
 		gitHash, _ := core.GetGitHash()
 
 		for _, c := range Config {

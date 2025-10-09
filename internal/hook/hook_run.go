@@ -22,6 +22,8 @@ app:
 		  action: "xxx cmd to run, eg:　scripts/updatexx.bat"
 		  depends:
 		    - flags: ["--web"]
+		- event: "before_binary"
+		  action: "scripts/pre_build.bat"
 		- event: "on_stop"
 		  action: "stop_app"
 
