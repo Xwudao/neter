@@ -6,6 +6,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"runtime"
 	"slices"
 	"strings"
 
@@ -128,18 +129,36 @@ func (h *HookManager) executeCommand(action string) error {
 		return nil
 	}
 
-	cmd := exec.Command(parts[0], parts[1:]...)
+	// Default: execute directly by splitting the action into program + args
+	// Special-case platform-specific script runners:
+	// - On Windows: .bat/.cmd should be run via cmd /C
+	// - On Unix-like: .sh scripts can be executed via sh (so they don't need +x)
+
+	ext := filepath.Ext(parts[0])
+
+	var cmd *exec.Cmd
+	if runtime.GOOS == "windows" {
+		// If it's a batch/cmd file, run via cmd /C <action>
+		if ext == ".bat" || ext == ".cmd" {
+			// Use the full action string so that arguments are preserved
+			cmd = exec.Command("cmd", "/C", action)
+		} else {
+			cmd = exec.Command(parts[0], parts[1:]...)
+		}
+	} else {
+		// Unix-like systems
+		if ext == ".sh" {
+			// Run shell script with sh. Use the raw action so args are preserved.
+			// This allows running scripts even if they are not executable.
+			cmd = exec.Command("sh", "-c", action)
+		} else {
+			cmd = exec.Command(parts[0], parts[1:]...)
+		}
+	}
+
 	cmd.Dir, _ = os.Getwd()
 	cmd.Stdout = os.Stdout
 	cmd.Stderr = os.Stderr
-
-	// Handle different file extensions for Windows
-	if filepath.Ext(parts[0]) == ".bat" || filepath.Ext(parts[0]) == ".cmd" {
-		cmd = exec.Command("cmd", append([]string{"/C"}, parts...)...)
-		cmd.Dir, _ = os.Getwd()
-		cmd.Stdout = os.Stdout
-		cmd.Stderr = os.Stderr
-	}
 
 	return cmd.Run()
 }
