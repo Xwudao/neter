@@ -43,6 +43,24 @@ var buildCmd = &cobra.Command{
 		cmdStr, _ := cmd.Flags().GetString("cmd")
 		html, _ := cmd.Flags().GetBool("html")
 
+		// If no platform flag is specified, use current system
+		if !linux && !mac && !win {
+			switch runtime.GOOS {
+			case "linux":
+				linux = true
+			case "darwin":
+				mac = true
+			case "windows":
+				win = true
+			default:
+				log.Printf("warning: unsupported OS %s, defaulting to current OS", runtime.GOOS)
+			}
+			// When no platform is specified, always use current arch if not explicitly set
+			if !cmd.Flags().Changed("arch") {
+				arch = runtime.GOARCH
+			}
+		}
+
 		// Initialize hook manager
 		hookManager := hook.NewHookManager()
 		if err := hookManager.LoadConfig(); err != nil {
