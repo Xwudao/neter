@@ -90,6 +90,11 @@ func (h *HookManager) ExecuteHooks(event string) error {
 
 	for _, hook := range h.config.App.Hooks {
 		if hook.Event == event {
+			if !shouldRunOnCurrentPlatform(hook.Action) {
+				log.Printf("[hook] skipping %s hook on %s due to incompatible script: %s", event, runtime.GOOS, hook.Action)
+				continue
+			}
+
 			// Check dependencies
 			if hook.Depends != nil && len(hook.Depends.Flags) > 0 {
 				if !h.checkFlagDependencies(hook.Depends.Flags) {
@@ -116,6 +121,30 @@ func (h *HookManager) checkFlagDependencies(requiredFlags []string) bool {
 		}
 	}
 	return true
+}
+
+func shouldRunOnCurrentPlatform(action string) bool {
+	return shouldRunOnPlatform(runtime.GOOS, action)
+}
+
+func shouldRunOnPlatform(goos, action string) bool {
+	command := strings.TrimSpace(action)
+	if command == "" {
+		return false
+	}
+
+	parts := strings.Fields(command)
+	if len(parts) == 0 {
+		return false
+	}
+
+	ext := strings.ToLower(filepath.Ext(parts[0]))
+	switch goos {
+	case "windows":
+		return ext != ".sh"
+	default:
+		return ext != ".bat" && ext != ".cmd"
+	}
 }
 
 func (h *HookManager) executeCommand(action string) error {
