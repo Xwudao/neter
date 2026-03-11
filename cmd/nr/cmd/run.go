@@ -7,19 +7,14 @@ import (
 	"fmt"
 	"log"
 	"os"
-	"path"
-	"path/filepath"
 	"runtime"
-	"strings"
 	"time"
 
-	"github.com/AlecAivazis/survey/v2"
 	"github.com/spf13/cobra"
 
 	"github.com/Xwudao/neter/internal/core"
 	"github.com/Xwudao/neter/pkg/parser"
 	"github.com/Xwudao/neter/pkg/proc"
-	"github.com/Xwudao/neter/pkg/utils"
 )
 
 // runCmd represents the run command
@@ -48,36 +43,15 @@ var runCmd = &cobra.Command{
 			res string
 			err error
 		)
-		cmdPath, err := find("cmd")
+		appRoot, err := resolveAppRoot(dir, cmd.Flags().Changed("dir"), "run")
 		if err != nil {
 			log.Fatalf("%v", err)
 			return
 		}
-		var appRoot string
-		switch len(cmdPath) {
-		case 0:
-			log.Fatalf("please run in root project directory")
-		case 1:
-			for _, v := range cmdPath {
-				appRoot = v
-			}
-		default:
-			var cmdPaths []string
-			for k := range cmdPath {
-				cmdPaths = append(cmdPaths, k)
-			}
-			prompt := &survey.Select{
-				Message:  "Which directory do you want to run?",
-				Options:  cmdPaths,
-				PageSize: 10,
-			}
-			e := survey.AskOne(prompt, &dir)
-			if e != nil || dir == "" {
-				return
-			}
-			appRoot = cmdPath[dir]
+		if appRoot == "" {
+			return
 		}
-		var buildPath = fmt.Sprintf("./%s/", appRoot)
+		var buildPath = fmt.Sprintf("./%s/", normalizeCommandPath(appRoot))
 
 		// generate wire
 		if wire {
@@ -101,23 +75,14 @@ var runCmd = &cobra.Command{
 
 		// build web
 		if web {
-			log.Println("build with web assets")
-			b := core.NewBuildWeb(pm)
-			err := b.Check()
-			utils.CheckErrWithStatus(err)
-			err = b.Build()
-			utils.CheckErrWithStatus(err)
-			err = b.Copy()
-			utils.CheckErrWithStatus(err)
-
-			log.Println("build web assets success")
+			checkErr(buildWebAssets(pm))
 		}
 
 		// generate app
 		log.Println("generating app...")
 		var buildArgs = []string{"build", "-o", name}
 		buildArgs = append(buildArgs, buildPath)
-		if res, err = run("go", buildArgs...); err != nil {
+		if res, err = runCommand("go", buildArgs...); err != nil {
 			log.Println("\n" + res)
 			log.Fatalf("go build error: %v", err)
 			return
@@ -153,63 +118,6 @@ var runCmd = &cobra.Command{
 		}
 		log.Println("done!")
 	},
-}
-
-func run(name string, args ...string) (string, error) {
-	return core.RunWithDir(name, "", nil, args...)
-}
-func runEnv(name string, env []string, args ...string) (string, error) {
-	return core.RunWithDir(name, "", env, args...)
-}
-
-func find(base string) (map[string]string, error) {
-	wd, err := os.Getwd()
-	if err != nil {
-		return nil, err
-	}
-	if !strings.HasSuffix(wd, "/") {
-		wd += "/"
-	}
-	var root bool
-	next := func(dir string) (map[string]string, error) {
-		cmdPath := make(map[string]string)
-		err := filepath.Walk(dir, func(walkPath string, info os.FileInfo, err error) error {
-			// multi level directory is not allowed under the cmdPath directory, so it is judged that the path ends with cmdPath.
-			if strings.HasSuffix(walkPath, "cmd") {
-				paths, err := os.ReadDir(walkPath)
-				if err != nil {
-					return err
-				}
-				for _, fileInfo := range paths {
-					if fileInfo.IsDir() {
-						abs := path.Join(walkPath, fileInfo.Name())
-						cmdPath[strings.TrimPrefix(abs, wd)] = abs
-					}
-				}
-				return nil
-			}
-			if info.Name() == "go.mod" {
-				root = true
-			}
-			return nil
-		})
-		return cmdPath, err
-	}
-	for range 5 {
-		tmp := base
-		cmd, err := next(tmp)
-		if err != nil {
-			return nil, err
-		}
-		if len(cmd) > 0 {
-			return cmd, nil
-		}
-		if root {
-			break
-		}
-		_ = filepath.Join(base, "..")
-	}
-	return map[string]string{"": base}, nil
 }
 
 func init() {

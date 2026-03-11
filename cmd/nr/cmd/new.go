@@ -3,13 +3,10 @@ package cmd
 import (
 	"fmt"
 	"log"
-	"os"
-	"path/filepath"
 
 	"github.com/spf13/cobra"
 
 	"github.com/Xwudao/neter/internal/core"
-	"github.com/Xwudao/neter/pkg/utils"
 )
 
 // newCmd represents the new command
@@ -39,16 +36,10 @@ func NewEntSchema() *EntSchema {
 }
 
 func (n *EntSchema) New(schemas []string) {
-	var dir, _ = os.Getwd()
-	schemaDir := filepath.Join(dir, "internal/data")
-	info, err := os.Stat(schemaDir)
+	schemaDir, err := findInternalDataDir()
 	if err != nil {
-		log.Println("please run in project root.")
+		log.Println(err.Error())
 		return
-	}
-
-	if !info.IsDir() {
-		utils.CheckErrWithStatus(fmt.Errorf("internal/data directory not exist"))
 	}
 
 	log.Println(schemaDir)
@@ -57,7 +48,7 @@ func (n *EntSchema) New(schemas []string) {
 	args = append(args, schemas...)
 	text, err := core.RunWithDir("ent", schemaDir, nil, args...)
 	fmt.Println(text)
-	utils.CheckErrWithStatus(err)
+	checkErr(err)
 }
 
 func init() {

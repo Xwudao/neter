@@ -11,7 +11,6 @@ import (
 	"strings"
 	"time"
 
-	"github.com/AlecAivazis/survey/v2"
 	"github.com/spf13/cobra"
 	"github.com/spf13/pflag"
 
@@ -90,51 +89,20 @@ var buildCmd = &cobra.Command{
 			}
 		}()
 
-		var appRoot string
-		cmdPath, err := find("cmd")
+		appRoot, err := resolveAppRoot(dir, cmd.Flags().Changed("dir"), "build")
 		if err != nil {
 			log.Fatal(err.Error())
 			return
 		}
-
-		switch len(cmdPath) {
-		case 0:
-			log.Fatalf("please run in root project directory")
-		case 1:
-			for _, v := range cmdPath {
-				appRoot = v
-			}
-		default:
-			var cmdPaths []string
-			for k := range cmdPath {
-				cmdPaths = append(cmdPaths, k)
-			}
-			prompt := &survey.Select{
-				Message:  "Which directory do you want to build?",
-				Options:  cmdPaths,
-				PageSize: 10,
-			}
-			e := survey.AskOne(prompt, &dir)
-			if e != nil || dir == "" {
-				return
-			}
-			appRoot = cmdPath[dir]
+		if appRoot == "" {
+			return
 		}
 
 		if web {
-			log.Println("build with web assets")
-			b := core.NewBuildWeb(pm)
-			err := b.Check()
-			utils.CheckErrWithStatus(err)
-			err = b.Build()
-			utils.CheckErrWithStatus(err)
-			err = b.Copy()
-			utils.CheckErrWithStatus(err)
-
-			log.Println("build web assets success")
+			checkErr(buildWebAssets(pm))
 		}
 
-		var buildPath = fmt.Sprintf("./%s/", appRoot)
+		var buildPath = fmt.Sprintf("./%s/", normalizeCommandPath(appRoot))
 		if name == "" {
 			name = filepath.Base(appRoot)
 		}
@@ -201,7 +169,7 @@ var buildCmd = &cobra.Command{
 					err error
 				)
 
-				if res, err = runEnv("go", c.Env, buildArgs...); err != nil {
+				if res, err = runCommandWithEnv("go", c.Env, buildArgs...); err != nil {
 					log.Println("\n" + res)
 					log.Fatalf("go build error: %v", err)
 					return

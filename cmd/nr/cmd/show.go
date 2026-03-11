@@ -3,13 +3,10 @@ package cmd
 import (
 	"fmt"
 	"log"
-	"os"
-	"path/filepath"
 
 	"github.com/spf13/cobra"
 
 	"github.com/Xwudao/neter/internal/core"
-	"github.com/Xwudao/neter/pkg/utils"
 )
 
 // showCmd represents the gen command
@@ -43,22 +40,16 @@ func NewShow() *Show {
 }
 
 func (s *Show) ShowEnt() {
-	var dir, _ = os.Getwd()
-	schemaDir := filepath.Join(dir, "internal/data")
-	info, err := os.Stat(schemaDir)
+	schemaDir, err := findInternalDataDir()
 	if err != nil {
-		log.Println("please run in project root.")
+		log.Println(err.Error())
 		return
-	}
-
-	if !info.IsDir() {
-		utils.CheckErrWithStatus(fmt.Errorf("internal/data dir not exist"))
 	}
 
 	log.Println(schemaDir)
 	text, err := core.RunWithDir("ent", schemaDir, nil, []string{"describe", "./ent/schema"}...)
 	fmt.Println(text)
-	utils.CheckErrWithStatus(err)
+	checkErr(err)
 
 }
 
