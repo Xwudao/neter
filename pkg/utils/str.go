@@ -6,11 +6,11 @@ import (
 )
 
 func ExtractInitials(s string) string {
-	var initials string
-	for _, word := range strings.Split(s, "") {
+	var initials strings.Builder
+	for word := range strings.SplitSeq(s, "") {
 		if unicode.IsUpper([]rune(word)[0]) {
-			initials += string([]rune(word)[0])
+			initials.WriteString(string([]rune(word)[0]))
 		}
 	}
-	return strings.ToLower(initials)
+	return strings.ToLower(initials.String())
 }

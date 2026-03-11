@@ -197,7 +197,7 @@ func all[T Type](types []Type) bool {
 
 func remove[T Type](types []Type) []Type {
 	i := 0
-	for j := 0; j < len(types); j++ {
+	for j := range types {
 		if !is[T](types[j]) {
 			if i != j {
 				types[i] = types[j]

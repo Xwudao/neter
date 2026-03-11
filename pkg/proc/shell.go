@@ -95,8 +95,8 @@ func parseCommand(cmd string) (args []string) {
 	// Just for "cmd.exe" in windows.
 	var argStr string
 	var firstChar, prevChar, lastChar1, lastChar2 byte
-	array := strings.Split(cmd, " ")
-	for _, v := range array {
+	array := strings.SplitSeq(cmd, " ")
+	for v := range array {
 		if len(argStr) > 0 {
 			argStr += " "
 		}

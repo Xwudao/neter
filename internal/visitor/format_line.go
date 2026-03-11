@@ -71,7 +71,7 @@ func (v *FormatLine) FormatHttpEngine(src any) ([]byte, error) {
 			}
 			// format params
 			var lists = n.Name.Obj.Decl.(*dst.FuncDecl).Type.Params.List
-			for i := 0; i < len(lists); i++ {
+			for i := range lists {
 				lists[i].Decorations().Before = dst.NewLine
 				lists[i].Decorations().After = dst.NewLine
 			}

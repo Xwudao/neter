@@ -9,7 +9,7 @@ import (
 )
 
 func jsonToTypeScriptInterface(jsonStr string, interfaceName string) (string, error) {
-	var jsonData map[string]interface{}
+	var jsonData map[string]any
 	err := json.Unmarshal([]byte(jsonStr), &jsonData)
 	if err != nil {
 		return "", err
@@ -23,7 +23,7 @@ func jsonToTypeScriptInterface(jsonStr string, interfaceName string) (string, er
 	return typeScriptCode.String(), nil
 }
 
-func generateTypeScriptCode(code *strings.Builder, data map[string]interface{}) {
+func generateTypeScriptCode(code *strings.Builder, data map[string]any) {
 	for key, value := range data {
 		code.WriteString(fmt.Sprintf("  %s: ", key))
 
@@ -34,23 +34,23 @@ func generateTypeScriptCode(code *strings.Builder, data map[string]interface{}) 
 			code.WriteString("number;\n")
 		case bool:
 			code.WriteString("boolean;\n")
-		case map[string]interface{}:
+		case map[string]any:
 			code.WriteString("{\n")
-			generateTypeScriptCode(code, value.(map[string]interface{}))
+			generateTypeScriptCode(code, value.(map[string]any))
 			code.WriteString("  };\n")
-		case []interface{}:
+		case []any:
 			code.WriteString("Array<")
-			if len(value.([]interface{})) > 0 {
-				switch value.([]interface{})[0].(type) {
+			if len(value.([]any)) > 0 {
+				switch value.([]any)[0].(type) {
 				case string:
 					code.WriteString("string>;\n")
 				case float64:
 					code.WriteString("number>;\n")
 				case bool:
 					code.WriteString("boolean>;\n")
-				case map[string]interface{}:
+				case map[string]any:
 					code.WriteString("{\n")
-					generateTypeScriptCode(code, value.([]interface{})[0].(map[string]interface{}))
+					generateTypeScriptCode(code, value.([]any)[0].(map[string]any))
 					code.WriteString("  }>;\n")
 				}
 			} else {
@@ -62,9 +62,9 @@ func generateTypeScriptCode(code *strings.Builder, data map[string]interface{}) 
 	}
 }
 
-func query2Map(queryString string) (map[string]interface{}, error) {
+func query2Map(queryString string) (map[string]any, error) {
 	// 创建一个 map 来存储查询参数
-	queryParams := make(map[string]interface{})
+	queryParams := make(map[string]any)
 
 	queryValues, err := url.ParseQuery(queryString)
 	if err != nil {

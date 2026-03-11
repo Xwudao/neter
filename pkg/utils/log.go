@@ -32,7 +32,7 @@ func LoadFiles(dir string, filter func(filename string) bool) (filenames []strin
 }
 
 func InStrArr(arr []string, aim string) bool {
-	for i := 0; i < len(arr); i++ {
+	for i := range arr {
 		if arr[i] == aim {
 			return true
 		}

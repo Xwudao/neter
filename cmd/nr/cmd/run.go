@@ -195,7 +195,7 @@ func find(base string) (map[string]string, error) {
 		})
 		return cmdPath, err
 	}
-	for i := 0; i < 5; i++ {
+	for range 5 {
 		tmp := base
 		cmd, err := next(tmp)
 		if err != nil {

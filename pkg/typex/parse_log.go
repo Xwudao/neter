@@ -31,9 +31,9 @@ func ParseLogData(fp string) (*LogData, error) {
 	}
 
 	strData := string(data)
-	strArr := strings.Split(strData, "\n")
+	strArr := strings.SplitSeq(strData, "\n")
 
-	for _, str := range strArr {
+	for str := range strArr {
 		hd := strings.SplitN(str, ":", 2)
 		if len(hd) != 2 {
 			continue
