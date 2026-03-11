@@ -50,7 +50,7 @@ var runCmd = &cobra.Command{
 		)
 		cmdPath, err := find("cmd")
 		if err != nil {
-			log.Fatalf(err.Error())
+			log.Fatalf("%v", err)
 			return
 		}
 		var appRoot string
