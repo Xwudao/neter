@@ -12,6 +12,28 @@ var (
 	ErrNotFoundMod = errors.New("not found mod file path")
 )
 
+// FindProjectRoot walks up the directory tree from cwd, looking for a go.mod
+// file. Returns the directory that contains go.mod, or ErrNotFoundMod if not
+// found within maxDepth parent steps.
+func FindProjectRoot(maxDepth int) (string, error) {
+	dir, err := os.Getwd()
+	if err != nil {
+		return "", err
+	}
+
+	for i := 0; i <= maxDepth; i++ {
+		if _, err := os.Stat(filepath.Join(dir, "go.mod")); err == nil {
+			return filepath.Clean(dir), nil
+		}
+		parent := filepath.Dir(dir)
+		if parent == dir {
+			break // reached filesystem root
+		}
+		dir = parent
+	}
+	return "", ErrNotFoundMod
+}
+
 func GetModName() (mod string) {
 	dir, err := os.Getwd()
 	if err != nil {

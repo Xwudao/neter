@@ -23,7 +23,7 @@ const (
 	genTypeBiz   = "biz"
 )
 
-var legacyGenFlagNames = []string{"type", "name", "no-repo", "v2", "with-crud", "with-params", "ent-name"}
+var legacyGenFlagNames = []string{"type", "name", "no-repo", "v2", "with-crud", "with-params", "ent-name", "pkg"}
 
 var genCmd = &cobra.Command{
 	Use:   "gen",
@@ -91,6 +91,7 @@ func newGenRequest(cmd *cobra.Command, typeName string) (internalgen.Request, er
 	switch typeName {
 	case genTypeRoute:
 		req.V2, _ = cmd.Flags().GetBool("v2")
+		req.Pkg, _ = cmd.Flags().GetString("pkg")
 	case genTypeBiz:
 		req.NoRepo, _ = cmd.Flags().GetBool("no-repo")
 		req.WithCRUD, _ = cmd.Flags().GetBool("with-crud")
@@ -112,6 +113,7 @@ func bindNameFlag(flags *pflag.FlagSet) {
 func bindRouteFlags(flags *pflag.FlagSet) {
 	bindNameFlag(flags)
 	flags.Bool("v2", false, "use v2 route template")
+	flags.StringP("pkg", "p", "", "route sub-package directory (e.g. v1); required when running outside //go:generate")
 }
 
 func bindBizFlags(flags *pflag.FlagSet) {
@@ -245,6 +247,7 @@ func init() {
 	genCmd.Flags().StringP("type", "t", genTypeRoute, "type of gen")
 	bindBizFlags(genCmd.Flags())
 	genCmd.Flags().Bool("v2", false, "use v2 route template")
+	genCmd.Flags().StringP("pkg", "p", "", "route sub-package directory (e.g. v1)")
 	hideLegacyGenFlags(genCmd)
 
 	bindRouteFlags(genRouteCmd.Flags())

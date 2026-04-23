@@ -26,6 +26,7 @@ type Generator struct {
 	RouteNameSuffix string
 	PackageName     string
 	ModName         string
+	Pkg             string // explicit package/subdir (CLI mode)
 
 	WithCRUD bool
 	EntName  string
@@ -56,6 +57,7 @@ type Generator struct {
 type Request struct {
 	TypeName   string
 	Name       string
+	Pkg        string // route sub-package (e.g. "v1"); required for route in CLI mode
 	NoRepo     bool
 	WithCRUD   bool
 	WithParams bool
@@ -67,6 +69,7 @@ func NewGenerator(req Request) *Generator {
 	return &Generator{
 		Name:     req.Name,
 		TypeName: req.TypeName,
+		Pkg:      req.Pkg,
 		WithCRUD: req.WithCRUD,
 		EntName:  req.EntName,
 		V2:       req.V2,
@@ -128,9 +131,33 @@ func (g *Generator) prepare() error {
 	g.FilenameBizSuffix = "_biz.go"
 	g.FilenameRepoSuffix = "_repo.go"
 	g.RouteNameSuffix = "Routes"
-	g.PackageName = os.Getenv("GOPACKAGE")
+
+	goPackage := os.Getenv("GOPACKAGE")
+	if goPackage != "" {
+		// Invoked via //go:generate — use the environment-provided context.
+		g.PackageName = goPackage
+		g.RootPath = utils.CurrentDir()
+	} else {
+		// Invoked from the command line — walk up/down to find the project root.
+		root, err := utils.FindProjectRoot(8)
+		if err != nil {
+			return fmt.Errorf("cannot find project root (go.mod): %w", err)
+		}
+		switch g.TypeName {
+		case "route":
+			pkg := g.Pkg
+			if pkg == "" {
+				return errors.New("please specify --pkg (e.g. --pkg v1) when running outside //go:generate")
+			}
+			g.PackageName = pkg
+			g.RootPath = filepath.Join(root, "internal", "routes", pkg)
+		case "biz":
+			g.PackageName = "biz"
+			g.RootPath = filepath.Join(root, "internal", "biz")
+		}
+	}
+
 	g.ModName = utils.GetModName()
-	g.RootPath = utils.CurrentDir()
 
 	g.saveRouteFilePath = filepath.Join(g.RootPath, strcase.ToSnake(g.Name)+g.FilenameRouteSuffix)
 	g.saveBizFilePath = filepath.Join(g.RootPath, strcase.ToSnake(g.Name)+g.FilenameBizSuffix)
@@ -145,10 +172,6 @@ func (g *Generator) prepare() error {
 	g.StructRouteName = strcase.ToCamel(g.Name + "Route")
 	g.StructBizName = strcase.ToCamel(g.Name + "Biz")
 	g.StructRepoName = strcase.ToCamel(g.Name + "Repository")
-
-	if g.PackageName == "" {
-		return errors.New("please run with //go:generate")
-	}
 
 	return nil
 }
