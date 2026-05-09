@@ -19,3 +19,6 @@ var CmdTpl string
 
 //go:embed cmd_app.tpl
 var CmdAppTpl string
+
+//go:embed biz_test.tpl
+var BizTestTpl string
