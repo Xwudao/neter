@@ -8,6 +8,9 @@ var RouteTpl string
 //go:embed biz.tpl
 var BizTpl string
 
+//go:embed biz_iface.tpl
+var BizIfaceTpl string
+
 //go:embed biz_params.tpl
 var BizParamsTpl string
 

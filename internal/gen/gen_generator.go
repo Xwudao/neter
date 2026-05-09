@@ -28,12 +28,14 @@ type Generator struct {
 	ModName         string
 	Pkg             string // explicit package/subdir (CLI mode)
 
-	WithCRUD bool
-	EntName  string
-	V2       bool
+	WithCRUD  bool
+	WithIface bool // generate _biz_iface.go + mockgen directive
+	EntName   string
+	V2        bool
 
 	routeTpl     string
 	bizTpl       string
+	bizIfaceTpl  string
 	repoTpl      string
 	bizParamsTpl string
 
@@ -43,6 +45,7 @@ type Generator struct {
 
 	saveRouteFilePath     string
 	saveBizFilePath       string
+	saveBizIfaceFilePath  string
 	saveRepoFilePath      string
 	saveBizParamsFilePath string
 
@@ -61,18 +64,20 @@ type Request struct {
 	NoRepo     bool
 	WithCRUD   bool
 	WithParams bool
+	WithIface  bool // generate a _biz_iface.go file and add a mockgen directive
 	EntName    string
 	V2         bool
 }
 
 func NewGenerator(req Request) *Generator {
 	return &Generator{
-		Name:     req.Name,
-		TypeName: req.TypeName,
-		Pkg:      req.Pkg,
-		WithCRUD: req.WithCRUD,
-		EntName:  req.EntName,
-		V2:       req.V2,
+		Name:      req.Name,
+		TypeName:  req.TypeName,
+		Pkg:       req.Pkg,
+		WithCRUD:  req.WithCRUD,
+		WithIface: req.WithIface,
+		EntName:   req.EntName,
+		V2:        req.V2,
 	}
 }
 
@@ -100,6 +105,11 @@ func Execute(req Request) error {
 		}
 		if err := g.updateBizProvider(); err != nil {
 			return err
+		}
+		if req.WithIface {
+			if err := g.GenBizIface(); err != nil {
+				return err
+			}
 		}
 		if !req.NoRepo {
 			if err := g.GenRepo(); err != nil {
@@ -161,11 +171,13 @@ func (g *Generator) prepare() error {
 
 	g.saveRouteFilePath = filepath.Join(g.RootPath, strcase.ToSnake(g.Name)+g.FilenameRouteSuffix)
 	g.saveBizFilePath = filepath.Join(g.RootPath, strcase.ToSnake(g.Name)+g.FilenameBizSuffix)
+	g.saveBizIfaceFilePath = filepath.Join(g.RootPath, strcase.ToSnake(g.Name)+"_biz_iface.go")
 	g.saveRepoFilePath = filepath.Join(filepath.Dir(g.RootPath), "data", strcase.ToSnake(g.Name)+g.FilenameRepoSuffix)
 	g.saveBizParamsFilePath = filepath.Join(g.RootPath, "../domain/params", strcase.ToSnake(g.Name)+"_params.go")
 
 	g.routeTpl = tpl.RouteTpl
 	g.bizTpl = tpl.BizTpl
+	g.bizIfaceTpl = tpl.BizIfaceTpl
 	g.repoTpl = tpl.RepoTpl
 	g.bizParamsTpl = tpl.BizParamsTpl
 
@@ -182,6 +194,47 @@ func (g *Generator) GenRoute() error {
 
 func (g *Generator) GenBiz() error {
 	return g.renderTemplateToFile("biz", g.bizTpl, g.saveBizFilePath)
+}
+
+func (g *Generator) GenBizIface() error {
+	if err := g.renderTemplateToFile("biz_iface", g.bizIfaceTpl, g.saveBizIfaceFilePath); err != nil {
+		return err
+	}
+	return g.appendMockGenDirective()
+}
+
+// appendMockGenDirective adds a //go:generate mockgen line to mocks/mock_gen.go.
+func (g *Generator) appendMockGenDirective() error {
+	mockGenPath := filepath.Join(g.RootPath, "mocks", "mock_gen.go")
+	if !utils.CheckExist(mockGenPath) {
+		utils.Info("mocks/mock_gen.go not found, skipping mockgen directive")
+		return nil
+	}
+
+	snakeName := strcase.ToSnake(g.Name)
+	line := fmt.Sprintf(
+		"//go:generate mockgen -source=../%s_biz_iface.go -destination=mock_%s_biz.go -package=mocks\n",
+		snakeName, snakeName,
+	)
+
+	content, err := os.ReadFile(mockGenPath)
+	if err != nil {
+		return fmt.Errorf("read mocks/mock_gen.go: %w", err)
+	}
+
+	if strings.Contains(string(content), line) {
+		utils.Info("mockgen directive already present, skipping")
+		return nil
+	}
+
+	// Insert the directive line before "package mocks" so the file stays syntactically valid.
+	updated := strings.Replace(string(content), "package mocks", line+"package mocks", 1)
+	if err := os.WriteFile(mockGenPath, []byte(updated), 0644); err != nil {
+		return fmt.Errorf("write mocks/mock_gen.go: %w", err)
+	}
+
+	utils.Info("added mockgen directive to mocks/mock_gen.go")
+	return nil
 }
 
 func (g *Generator) GenParams() error {
