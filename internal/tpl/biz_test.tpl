@@ -15,10 +15,10 @@ import (
 func Test{{.StructBizName}}_Example(t *testing.T) {
 	ctrl := gomock.NewController(t)
 
-	mockRepo := mocks.NewMock{{.ToCamel .Name}}Repository(ctrl)
+	mockDep := mocks.NewMock{{.MockTypeName}}(ctrl)
 
 	// 1. Set up expectations:
-	//    mockRepo.EXPECT().SomeMethod(gomock.Any()).Return(value, nil)
+	//    mockDep.EXPECT().SomeMethod(gomock.Any()).Return(value, nil)
 	//
 	// 2. Create the biz (adapt constructor args if needed, e.g. jwt.Client):
 	//    log := zap.NewNop().Sugar()
@@ -30,5 +30,5 @@ func Test{{.StructBizName}}_Example(t *testing.T) {
 	//    assert.NoError(t, err)
 	//    assert.NotNil(t, result)
 
-	assert.NotNil(t, mockRepo)
+	assert.NotNil(t, mockDep)
 }

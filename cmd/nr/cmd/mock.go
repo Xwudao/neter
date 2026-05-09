@@ -27,11 +27,7 @@ type MockTemplateData struct {
 	ModName       string
 	Name          string // raw snake_case base name, e.g. "user"
 	StructBizName string // e.g. "UserBiz"
-}
-
-// ToCamel converts s to CamelCase. Called from the template as {{.ToCamel .Name}}.
-func (m *MockTemplateData) ToCamel(s string) string {
-	return strcase.ToCamel(s)
+	MockTypeName  string // e.g. "UserRepository" or "RedisRepo"
 }
 
 // ────────────────────────────────────────────────────────────────────────────
@@ -184,11 +180,18 @@ func collectBizFiles(bizDir, name string) ([]string, error) {
 // fileHasInterface reports whether the Go source file contains at least one
 // interface type declaration.
 func fileHasInterface(path string) bool {
+	_, err := findPreferredInterfaceName(path)
+	return err == nil
+}
+
+func findPreferredInterfaceName(path string) (string, error) {
 	fset := token.NewFileSet()
 	f, err := parser.ParseFile(fset, path, nil, 0)
 	if err != nil {
-		return false
+		return "", err
 	}
+
+	firstInterface := ""
 	for _, decl := range f.Decls {
 		gd, ok := decl.(*ast.GenDecl)
 		if !ok || gd.Tok != token.TYPE {
@@ -199,12 +202,25 @@ func fileHasInterface(path string) bool {
 			if !ok {
 				continue
 			}
-			if _, isIface := ts.Type.(*ast.InterfaceType); isIface {
-				return true
+			if _, isIface := ts.Type.(*ast.InterfaceType); !isIface {
+				continue
+			}
+
+			name := ts.Name.Name
+			if firstInterface == "" {
+				firstInterface = name
+			}
+			if strings.HasSuffix(name, "Repository") || strings.HasSuffix(name, "Repo") {
+				return name, nil
 			}
 		}
 	}
-	return false
+
+	if firstInterface == "" {
+		return "", errors.New("no interface definition found")
+	}
+
+	return firstInterface, nil
 }
 
 // writeMockGenGo writes (or overwrites) mocks/mock_gen.go with package doc
@@ -237,10 +253,17 @@ func maybeWriteTestStub(bizDir, baseName, modName string) error {
 		return nil
 	}
 
+	bizFile := filepath.Join(bizDir, baseName+"_biz.go")
+	mockTypeName, err := findPreferredInterfaceName(bizFile)
+	if err != nil {
+		return fmt.Errorf("find interface in %s: %w", filepath.Base(bizFile), err)
+	}
+
 	data := &MockTemplateData{
 		ModName:       modName,
 		Name:          baseName,
 		StructBizName: strcase.ToCamel(baseName) + "Biz",
+		MockTypeName:  mockTypeName,
 	}
 
 	parsed, err := template.New("biz_test").Parse(tpl.BizTestTpl)
