@@ -41,6 +41,13 @@ var buildCmd = &cobra.Command{
 		pm, _ := cmd.Flags().GetString("pm")
 		cmdStr, _ := cmd.Flags().GetString("cmd")
 		html, _ := cmd.Flags().GetBool("html")
+		prod, _ := cmd.Flags().GetBool("prod")
+
+		// --prod implies --trim and --web
+		if prod {
+			trim = true
+			web = true
+		}
 
 		// If no platform flag is specified, use current system
 		if !linux && !mac && !win {
@@ -156,6 +163,17 @@ var buildCmd = &cobra.Command{
 				if dlv {
 					buildArgs = append(buildArgs, `-gcflags=all=-N -l`)
 				} else if trim {
+					// Append neter.yml ldflags for production builds
+					if prod {
+						neterCfg, neterErr := core.LoadNeterConfig()
+						if neterErr != nil {
+							log.Printf("[neter] warning: %v", neterErr)
+						} else if neterLdflags := neterCfg.BuildLdflags(); neterLdflags != "" {
+							ldflags.WriteString(" ")
+							ldflags.WriteString(neterLdflags)
+							log.Printf("[neter] injected ldflags from neter.yml")
+						}
+					}
 					buildArgs = append(buildArgs, "-trimpath", ldflags.String())
 				}
 				// var buildArgs = []string{"build", "-trimpath", `-ldflags=-s -w -extldflags '-static'`, "-o", c.Name}
@@ -241,4 +259,6 @@ func init() {
 	buildCmd.Flags().Bool("web", false, "build with web assets")
 	buildCmd.Flags().String("pm", "pnpm", "the package manger")
 	buildCmd.Flags().Bool("html", false, "build with web / template")
+	// buildCmd.Flags().Bool("prod", false, "production build: enables --trim --web and injects ldflags from neter.yml")
+	buildCmd.Flags().BoolP("prod", "p", false, "production build: enables --trim --web and injects ldflags from neter.yml")
 }
