@@ -4,7 +4,10 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"runtime"
+	"strconv"
 	"strings"
+	"time"
 
 	"gopkg.in/yaml.v3"
 )
@@ -62,7 +65,21 @@ func parseNeterFile(path string) (*NeterConfig, error) {
 }
 
 // BuildLdflags constructs the -ldflags string for go build.
-// It resolves ${ENV_VAR} placeholders in variable values from the environment.
+// It resolves ${VAR} placeholders in variable values.
+// Built-in variables are resolved first, then environment variables as fallback.
+//
+// Supported built-in variables:
+//   - ${date}          current date (YYYY-MM-DD)
+//   - ${datetime}      current datetime (YYYY-MM-DD HH:MM:SS)
+//   - ${time}          current time (HH:MM:SS)
+//   - ${timestamp}     Unix timestamp in seconds
+//   - ${timestamp_ms}  Unix timestamp in milliseconds
+//   - ${year}          current year
+//   - ${month}         current month (01-12)
+//   - ${day}           current day (01-31)
+//   - ${git_hash}      short git commit hash (7 chars)
+//   - ${git_hash_full} full git commit hash
+//   - ${go_version}    Go runtime version
 func (c *NeterConfig) BuildLdflags() string {
 	if len(c.Ldflags) == 0 {
 		return ""
@@ -71,10 +88,64 @@ func (c *NeterConfig) BuildLdflags() string {
 	var parts []string
 	for _, lf := range c.Ldflags {
 		for varName, varValue := range lf.Vars {
-			resolved := os.ExpandEnv(varValue)
+			resolved := expandVars(varValue)
 			parts = append(parts, fmt.Sprintf("-X '%s.%s=%s'", lf.Package, varName, resolved))
 		}
 	}
 
 	return strings.Join(parts, " ")
+}
+
+// expandVars resolves ${VAR} placeholders in s.
+// Built-in variables take precedence over environment variables.
+func expandVars(s string) string {
+	return os.Expand(s, func(key string) string {
+		if v, ok := getBuiltinVar(key); ok {
+			return v
+		}
+		return os.Getenv(key)
+	})
+}
+
+// getBuiltinVar returns the value of the named built-in variable.
+// The second return value indicates whether the name is a known built-in.
+func getBuiltinVar(name string) (string, bool) {
+	now := time.Now()
+	switch name {
+	case "date":
+		return now.Format("2006-01-02"), true
+	case "datetime":
+		return now.Format("2006-01-02 15:04:05"), true
+	case "time":
+		return now.Format("15:04:05"), true
+	case "timestamp":
+		return strconv.FormatInt(now.Unix(), 10), true
+	case "timestamp_ms":
+		return strconv.FormatInt(now.UnixMilli(), 10), true
+	case "year":
+		return strconv.Itoa(now.Year()), true
+	case "month":
+		return fmt.Sprintf("%02d", now.Month()), true
+	case "day":
+		return fmt.Sprintf("%02d", now.Day()), true
+	case "git_hash":
+		hash, err := GetGitHash()
+		if err != nil {
+			return "", true
+		}
+		if len(hash) > 7 {
+			hash = hash[:7]
+		}
+		return hash, true
+	case "git_hash_full":
+		hash, err := GetGitHash()
+		if err != nil {
+			return "", true
+		}
+		return hash, true
+	case "go_version":
+		return runtime.Version(), true
+	default:
+		return "", false
+	}
 }
