@@ -199,6 +199,17 @@ func TestDetectFrontendURL(t *testing.T) {
 	}
 }
 
+func TestDetectFrontendURLWithANSI(t *testing.T) {
+	line := "\x1b[32mLocal:\x1b[0m   http://127.0.0.1:3000/"
+	got, ok := detectFrontendURL(line)
+	if !ok {
+		t.Fatal("expected ansi url to be detected")
+	}
+	if got != "http://127.0.0.1:3000/" {
+		t.Fatalf("unexpected ansi url: %q", got)
+	}
+}
+
 func TestDetectFrontendURLInvalid(t *testing.T) {
 	if got, ok := detectFrontendURL("ready in 120ms"); ok || got != "" {
 		t.Fatalf("expected no url, got %q ok=%v", got, ok)
@@ -224,5 +235,17 @@ func TestBrowserOpenCommand(t *testing.T) {
 		if name != "rundll32" || len(args) != 2 {
 			t.Fatalf("unexpected windows open command: %q %#v", name, args)
 		}
+	}
+}
+
+func TestInferFrontendURL(t *testing.T) {
+	got := inferFrontendURL([]string{"run", "dev", "--host", "0.0.0.0", "--port", "3001"})
+	if got != "http://localhost:3001/" {
+		t.Fatalf("unexpected inferred url: %q", got)
+	}
+
+	got = inferFrontendURL([]string{"run", "dev", "--host=127.0.0.1", "--port=4173"})
+	if got != "http://127.0.0.1:4173/" {
+		t.Fatalf("unexpected inferred url with equals: %q", got)
 	}
 }

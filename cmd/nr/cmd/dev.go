@@ -14,6 +14,7 @@ import (
 	"path/filepath"
 	"regexp"
 	"runtime"
+	"strconv"
 	"strings"
 	"sync"
 	"syscall"
@@ -47,6 +48,7 @@ const (
 )
 
 var devURLPattern = regexp.MustCompile(`https?://[^\s"'<>]+`)
+var devANSISequencePattern = regexp.MustCompile(`\x1b\[[0-9;?]*[ -/]*[@-~]`)
 
 type devProcessSpec struct {
 	Name    string
@@ -54,6 +56,7 @@ type devProcessSpec struct {
 	Path    string
 	Args    []string
 	WorkDir string
+	URL     string
 }
 
 type devManagedProcess struct {
@@ -142,7 +145,7 @@ var devCmd = &cobra.Command{
 
 		supervisor := newDevSupervisor(ctx, []devProcessSpec{
 			{Name: devBackendProcess, Color: devColorBlue, Path: backendName, Args: backendArgs},
-			{Name: devFrontendProcess, Color: devColorMagenta, Path: pm, Args: frontendArgs, WorkDir: frontendPath},
+			{Name: devFrontendProcess, Color: devColorMagenta, Path: pm, Args: frontendArgs, WorkDir: frontendPath, URL: inferFrontendURL(frontendArgs)},
 		})
 
 		if err := supervisor.Run(); err != nil {
@@ -174,13 +177,17 @@ func newDevSupervisor(parent context.Context, specs []devProcessSpec) *devSuperv
 		specCopy := spec
 		processes[spec.Name] = &devManagedProcess{spec: specCopy}
 	}
-	return &devSupervisor{
+	supervisor := &devSupervisor{
 		ctx:          ctx,
 		cancel:       cancel,
 		processes:    processes,
 		exits:        make(chan devExitEvent, len(specs)*4),
 		commandLines: make(chan string, 8),
 	}
+	if frontendProc, ok := processes[devFrontendProcess]; ok {
+		supervisor.frontendURL = frontendProc.spec.URL
+	}
+	return supervisor
 }
 
 func (s *devSupervisor) Run() error {
@@ -525,6 +532,7 @@ func formatDevOutputLine(name string, color string, line string) string {
 }
 
 func detectFrontendURL(line string) (string, bool) {
+	line = sanitizeDevOutputLine(line)
 	match := devURLPattern.FindString(line)
 	if match == "" {
 		return "", false
@@ -534,6 +542,45 @@ func detectFrontendURL(line string) (string, bool) {
 		return "", false
 	}
 	return parsed.String(), true
+}
+
+func sanitizeDevOutputLine(line string) string {
+	return devANSISequencePattern.ReplaceAllString(line, "")
+}
+
+func inferFrontendURL(args []string) string {
+	host := "localhost"
+	port := 5173
+
+	for i := 0; i < len(args); i++ {
+		arg := args[i]
+		switch {
+		case arg == "--host" && i+1 < len(args):
+			host = normalizeFrontendHost(args[i+1])
+			i++
+		case strings.HasPrefix(arg, "--host="):
+			host = normalizeFrontendHost(strings.TrimPrefix(arg, "--host="))
+		case arg == "--port" && i+1 < len(args):
+			if parsedPort, err := strconv.Atoi(args[i+1]); err == nil && parsedPort > 0 {
+				port = parsedPort
+			}
+			i++
+		case strings.HasPrefix(arg, "--port="):
+			if parsedPort, err := strconv.Atoi(strings.TrimPrefix(arg, "--port=")); err == nil && parsedPort > 0 {
+				port = parsedPort
+			}
+		}
+	}
+
+	return fmt.Sprintf("http://%s:%d/", host, port)
+}
+
+func normalizeFrontendHost(host string) string {
+	host = strings.TrimSpace(host)
+	if host == "" || host == "0.0.0.0" || host == "::" || host == "[::]" {
+		return "localhost"
+	}
+	return host
 }
 
 func openBrowser(target string) error {
