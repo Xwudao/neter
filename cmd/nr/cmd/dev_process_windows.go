@@ -12,7 +12,12 @@ func configureDevCommand(cmd *exec.Cmd) {
 }
 
 func interruptDevProcess(cmd *exec.Cmd) error {
-	return taskkill(cmd, false)
+	if err := taskkill(cmd, false); err != nil {
+		if forceErr := taskkill(cmd, true); forceErr != nil {
+			return fmt.Errorf("graceful stop failed (%v), force stop failed (%v)", err, forceErr)
+		}
+	}
+	return nil
 }
 
 func killDevProcess(cmd *exec.Cmd) error {
@@ -31,7 +36,10 @@ func taskkill(cmd *exec.Cmd, force bool) error {
 
 	killCmd := exec.Command("taskkill", args...)
 	if output, err := killCmd.CombinedOutput(); err != nil {
-		return fmt.Errorf("taskkill %v: %w: %s", args, err, string(output))
+		if len(output) > 0 {
+			return fmt.Errorf("taskkill %v: %w", args, err)
+		}
+		return fmt.Errorf("taskkill %v: %w", args, err)
 	}
 	return nil
 }
