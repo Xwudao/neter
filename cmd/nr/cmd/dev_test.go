@@ -2,6 +2,8 @@ package cmd
 
 import (
 	"os"
+	"os/exec"
+	"runtime"
 	"strings"
 	"testing"
 )
@@ -74,6 +76,11 @@ func TestParseDevControlCommand(t *testing.T) {
 		t.Fatalf("unexpected st parse: action=%q target=%q ok=%v", action, target, ok)
 	}
 
+	action, target, ok = parseDevControlCommand("o")
+	if !ok || action != devOpenAction || target != "" {
+		t.Fatalf("unexpected open parse: action=%q target=%q ok=%v", action, target, ok)
+	}
+
 	action, target, ok = parseDevControlCommand("h")
 	if !ok || action != devHelpAction || target != "" {
 		t.Fatalf("unexpected help parse: action=%q target=%q ok=%v", action, target, ok)
@@ -137,5 +144,85 @@ func TestExpandDevCommandTarget(t *testing.T) {
 func TestExpandDevCommandTargetInvalid(t *testing.T) {
 	if _, err := expandDevCommandTarget("api"); err == nil {
 		t.Fatal("expected invalid target error")
+	}
+}
+
+func TestSendFrontendOpenCommand(t *testing.T) {
+	s := &devSupervisor{
+		processes: map[string]*devManagedProcess{
+			devFrontendProcess: {
+				spec: devProcessSpec{Name: devFrontendProcess},
+				cmd:  &exec.Cmd{},
+			},
+		},
+		frontendURL: "http://localhost:5173/",
+	}
+
+	name, args, err := browserOpenCommand(s.frontendURL)
+	if err != nil {
+		t.Fatalf("unexpected browser command error: %v", err)
+	}
+	if name == "" || len(args) == 0 {
+		t.Fatalf("expected non-empty browser command, got name=%q args=%#v", name, args)
+	}
+}
+
+func TestSendFrontendOpenCommandWhenStopped(t *testing.T) {
+	s := &devSupervisor{processes: map[string]*devManagedProcess{}}
+	if err := s.sendFrontendOpenCommand(); err == nil {
+		t.Fatal("expected error when frontend is stopped")
+	}
+}
+
+func TestSendFrontendOpenCommandWithoutURL(t *testing.T) {
+	s := &devSupervisor{
+		processes: map[string]*devManagedProcess{
+			devFrontendProcess: {
+				spec: devProcessSpec{Name: devFrontendProcess},
+				cmd:  &exec.Cmd{},
+			},
+		},
+	}
+	if err := s.sendFrontendOpenCommand(); err == nil {
+		t.Fatal("expected error when frontend url is missing")
+	}
+}
+
+func TestDetectFrontendURL(t *testing.T) {
+	line := "  Local:   http://localhost:5173/"
+	got, ok := detectFrontendURL(line)
+	if !ok {
+		t.Fatal("expected url to be detected")
+	}
+	if got != "http://localhost:5173/" {
+		t.Fatalf("unexpected url: %q", got)
+	}
+}
+
+func TestDetectFrontendURLInvalid(t *testing.T) {
+	if got, ok := detectFrontendURL("ready in 120ms"); ok || got != "" {
+		t.Fatalf("expected no url, got %q ok=%v", got, ok)
+	}
+}
+
+func TestBrowserOpenCommand(t *testing.T) {
+	name, args, err := browserOpenCommand("http://localhost:5173/")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	switch runtime.GOOS {
+	case "darwin":
+		if name != "open" || len(args) != 1 {
+			t.Fatalf("unexpected darwin open command: %q %#v", name, args)
+		}
+	case "linux":
+		if name != "xdg-open" || len(args) != 1 {
+			t.Fatalf("unexpected linux open command: %q %#v", name, args)
+		}
+	case "windows":
+		if name != "rundll32" || len(args) != 2 {
+			t.Fatalf("unexpected windows open command: %q %#v", name, args)
+		}
 	}
 }

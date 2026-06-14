@@ -7,10 +7,13 @@ import (
 	"fmt"
 	"io"
 	"log"
+	"net/url"
 	"os"
 	"os/exec"
 	"os/signal"
 	"path/filepath"
+	"regexp"
+	"runtime"
 	"strings"
 	"sync"
 	"syscall"
@@ -31,6 +34,7 @@ const (
 	devBackendProcess  = "backend"
 	devFrontendProcess = "frontend"
 	devRestartAction   = "restart"
+	devOpenAction      = "open"
 	devStatusAction    = "status"
 	devHelpAction      = "help"
 	devQuitAction      = "quit"
@@ -41,6 +45,8 @@ const (
 	devStatusAlias     = "st"
 	devHelpAlias       = "h"
 )
+
+var devURLPattern = regexp.MustCompile(`https?://[^\s"'<>]+`)
 
 type devProcessSpec struct {
 	Name    string
@@ -53,6 +59,7 @@ type devProcessSpec struct {
 type devManagedProcess struct {
 	spec       devProcessSpec
 	cmd        *exec.Cmd
+	stdin      io.WriteCloser
 	done       chan struct{}
 	stopping   bool
 	restarting bool
@@ -68,10 +75,12 @@ type devSupervisor struct {
 	ctx          context.Context
 	cancel       context.CancelFunc
 	outputMu     sync.Mutex
+	stateMu      sync.RWMutex
 	processes    map[string]*devManagedProcess
 	exits        chan devExitEvent
 	commandLines chan string
 	shuttingDown bool
+	frontendURL  string
 }
 
 var devCmd = &cobra.Command{
@@ -181,7 +190,7 @@ func (s *devSupervisor) Run() error {
 		}
 	}
 
-	s.printControllerMessage("commands: rs backend|b | rs frontend|f | rs all|a | status|st | help|h | quit")
+	s.printControllerMessage("commands: rs backend|b | rs frontend|f | rs all|a | o | status|st | help|h | quit")
 	go s.readCommands(os.Stdin)
 
 	for {
@@ -216,6 +225,10 @@ func (s *devSupervisor) startProcess(name string) error {
 	cmd := exec.CommandContext(s.ctx, proc.spec.Path, proc.spec.Args...)
 	cmd.Dir = proc.spec.WorkDir
 
+	stdin, err := cmd.StdinPipe()
+	if err != nil {
+		return fmt.Errorf("prepare stdin for %s: %w", name, err)
+	}
 	stdout, err := cmd.StdoutPipe()
 	if err != nil {
 		return fmt.Errorf("prepare stdout for %s: %w", name, err)
@@ -225,14 +238,15 @@ func (s *devSupervisor) startProcess(name string) error {
 		return fmt.Errorf("prepare stderr for %s: %w", name, err)
 	}
 
-	go streamDevOutput(stdout, os.Stdout, proc.spec.Name, proc.spec.Color, &s.outputMu)
-	go streamDevOutput(stderr, os.Stderr, proc.spec.Name, proc.spec.Color, &s.outputMu)
+	go s.streamProcessOutput(stdout, os.Stdout, proc.spec.Name, proc.spec.Color)
+	go s.streamProcessOutput(stderr, os.Stderr, proc.spec.Name, proc.spec.Color)
 
 	if err := cmd.Start(); err != nil {
 		return fmt.Errorf("start %s: %w", name, err)
 	}
 
 	proc.cmd = cmd
+	proc.stdin = stdin
 	proc.done = make(chan struct{})
 	proc.stopping = false
 	proc.restarting = false
@@ -325,9 +339,13 @@ func (s *devSupervisor) handleExit(exit devExitEvent) {
 	plannedStop := proc.stopping
 	shouldRestart := proc.restarting
 	proc.cmd = nil
+	proc.stdin = nil
 	proc.done = nil
 	proc.stopping = false
 	proc.restarting = false
+	if exit.name == devFrontendProcess {
+		s.setFrontendURL("")
+	}
 
 	if s.shuttingDown {
 		return
@@ -352,7 +370,7 @@ func (s *devSupervisor) handleCommand(line string) {
 	action, target, ok := parseDevControlCommand(line)
 	if !ok {
 		if strings.TrimSpace(line) != "" {
-			s.printControllerMessage("unknown command, use: rs backend|b | rs frontend|f | rs all|a | status|st | help|h | quit")
+			s.printControllerMessage("unknown command, use: rs backend|b | rs frontend|f | rs all|a | o | status|st | help|h | quit")
 		}
 		return
 	}
@@ -362,10 +380,14 @@ func (s *devSupervisor) handleCommand(line string) {
 		if err := s.restartProcess(target); err != nil {
 			s.printControllerMessage(err.Error())
 		}
+	case devOpenAction:
+		if err := s.sendFrontendOpenCommand(); err != nil {
+			s.printControllerMessage(err.Error())
+		}
 	case devStatusAction:
 		s.printStatus()
 	case devHelpAction:
-		s.printControllerMessage("commands: rs backend|b | rs frontend|f | rs all|a | status|st | help|h | quit")
+		s.printControllerMessage("commands: rs backend|b | rs frontend|f | rs all|a | o | status|st | help|h | quit")
 	case devQuitAction:
 		s.cancel()
 	}
@@ -388,6 +410,52 @@ func (s *devSupervisor) processStatus(name string) string {
 func (s *devSupervisor) isProcessRunning(name string) bool {
 	proc, ok := s.processes[name]
 	return ok && proc.cmd != nil
+}
+
+func (s *devSupervisor) sendFrontendOpenCommand() error {
+	proc, ok := s.processes[devFrontendProcess]
+	if !ok || proc.cmd == nil {
+		return fmt.Errorf("frontend is not running")
+	}
+
+	frontendURL := s.getFrontendURL()
+	if frontendURL == "" {
+		return fmt.Errorf("frontend url not detected yet")
+	}
+	if err := openBrowser(frontendURL); err != nil {
+		return fmt.Errorf("open frontend url %s: %w", frontendURL, err)
+	}
+	s.printControllerMessage(fmt.Sprintf("opened %s", frontendURL))
+	return nil
+}
+
+func (s *devSupervisor) streamProcessOutput(src io.Reader, dst io.Writer, name string, color string) {
+	scanner := bufio.NewScanner(src)
+	scanner.Buffer(make([]byte, 0, 64*1024), devScannerBuffer)
+	for scanner.Scan() {
+		line := scanner.Text()
+		if name == devFrontendProcess {
+			if detectedURL, ok := detectFrontendURL(line); ok {
+				s.setFrontendURL(detectedURL)
+			}
+		}
+
+		s.outputMu.Lock()
+		fmt.Fprintln(dst, formatDevOutputLine(name, color, line))
+		s.outputMu.Unlock()
+	}
+}
+
+func (s *devSupervisor) setFrontendURL(frontendURL string) {
+	s.stateMu.Lock()
+	defer s.stateMu.Unlock()
+	s.frontendURL = frontendURL
+}
+
+func (s *devSupervisor) getFrontendURL() string {
+	s.stateMu.RLock()
+	defer s.stateMu.RUnlock()
+	return s.frontendURL
 }
 
 func (s *devSupervisor) readCommands(src io.Reader) {
@@ -433,6 +501,11 @@ func parseDevControlCommand(line string) (action string, target string, ok bool)
 			return "", "", false
 		}
 		return devRestartAction, fields[1], true
+	case "o", "open":
+		if len(fields) != 1 {
+			return "", "", false
+		}
+		return devOpenAction, "", true
 	case "status":
 		return devStatusAction, "", true
 	case devStatusAlias:
@@ -446,18 +519,41 @@ func parseDevControlCommand(line string) (action string, target string, ok bool)
 	}
 }
 
-func streamDevOutput(src io.Reader, dst io.Writer, name string, color string, mu *sync.Mutex) {
-	scanner := bufio.NewScanner(src)
-	scanner.Buffer(make([]byte, 0, 64*1024), devScannerBuffer)
-	for scanner.Scan() {
-		mu.Lock()
-		fmt.Fprintln(dst, formatDevOutputLine(name, color, scanner.Text()))
-		mu.Unlock()
-	}
-}
-
 func formatDevOutputLine(name string, color string, line string) string {
 	return fmt.Sprintf("%s[%s]%s %s", color, name, devColorReset, line)
+}
+
+func detectFrontendURL(line string) (string, bool) {
+	match := devURLPattern.FindString(line)
+	if match == "" {
+		return "", false
+	}
+	parsed, err := url.Parse(match)
+	if err != nil || parsed.Scheme == "" || parsed.Host == "" {
+		return "", false
+	}
+	return parsed.String(), true
+}
+
+func openBrowser(target string) error {
+	name, args, err := browserOpenCommand(target)
+	if err != nil {
+		return err
+	}
+	return exec.Command(name, args...).Start()
+}
+
+func browserOpenCommand(target string) (string, []string, error) {
+	switch runtime.GOOS {
+	case "darwin":
+		return "open", []string{target}, nil
+	case "linux":
+		return "xdg-open", []string{target}, nil
+	case "windows":
+		return "rundll32", []string{"url.dll,FileProtocolHandler", target}, nil
+	default:
+		return "", nil, fmt.Errorf("unsupported platform %s", runtime.GOOS)
+	}
 }
 
 func init() {
