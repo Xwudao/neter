@@ -224,6 +224,7 @@ func (s *devSupervisor) startProcess(name string) error {
 
 	cmd := exec.CommandContext(s.ctx, proc.spec.Path, proc.spec.Args...)
 	cmd.Dir = proc.spec.WorkDir
+	configureDevCommand(cmd)
 
 	stdin, err := cmd.StdinPipe()
 	if err != nil {
@@ -274,10 +275,12 @@ func (s *devSupervisor) stopProcess(name string, restart bool) error {
 	proc.stopping = true
 	proc.restarting = restart
 
-	if err := proc.cmd.Process.Signal(os.Interrupt); err != nil {
-		if !errors.Is(err, os.ErrProcessDone) {
-			return fmt.Errorf("interrupt %s: %w", name, err)
-		}
+	if proc.stdin != nil {
+		_ = proc.stdin.Close()
+	}
+
+	if err := interruptDevProcess(proc.cmd); err != nil && !errors.Is(err, os.ErrProcessDone) {
+		return fmt.Errorf("interrupt %s: %w", name, err)
 	}
 
 	select {
@@ -285,13 +288,11 @@ func (s *devSupervisor) stopProcess(name string, restart bool) error {
 		return nil
 	case <-time.After(devStopTimeout):
 		s.printControllerMessage(fmt.Sprintf("%s did not exit in time, killing it", name))
-		if err := proc.cmd.Process.Kill(); err != nil && !errors.Is(err, os.ErrProcessDone) {
+		if err := killDevProcess(proc.cmd); err != nil && !errors.Is(err, os.ErrProcessDone) {
 			return fmt.Errorf("kill %s: %w", name, err)
 		}
 		<-proc.done
 		return nil
-	case <-s.ctx.Done():
-		return s.ctx.Err()
 	}
 }
 
