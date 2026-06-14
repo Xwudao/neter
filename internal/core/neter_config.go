@@ -1,6 +1,7 @@
 package core
 
 import (
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -12,15 +13,33 @@ import (
 	"gopkg.in/yaml.v3"
 )
 
+var ErrNeterConfigNotFound = errors.New("neter.yml not found")
+
 // LdflagVar represents a single ldflags variable injection.
 type LdflagVar struct {
 	Package string            `yaml:"package"`
 	Vars    map[string]string `yaml:"vars"`
 }
 
+type DevConfig struct {
+	Backend  DevBackendConfig  `yaml:"backend"`
+	Frontend DevFrontendConfig `yaml:"frontend"`
+}
+
+type DevBackendConfig struct {
+	Cmd string `yaml:"cmd"`
+}
+
+type DevFrontendConfig struct {
+	Dir string `yaml:"dir"`
+	Pm  string `yaml:"pm"`
+	Cmd string `yaml:"cmd"`
+}
+
 // NeterConfig represents the neter.yml project build configuration.
 type NeterConfig struct {
 	Ldflags []LdflagVar `yaml:"ldflags"`
+	Dev     DevConfig   `yaml:"dev"`
 }
 
 // LoadNeterConfig reads and parses the neter.yml file from the project root.
@@ -38,7 +57,7 @@ func LoadNeterConfig() (*NeterConfig, error) {
 		}
 		// Stop at go.mod boundary
 		if _, statErr := os.Stat(filepath.Join(dir, "go.mod")); statErr == nil {
-			return nil, fmt.Errorf("neter.yml not found")
+			return nil, ErrNeterConfigNotFound
 		}
 		parent := filepath.Dir(dir)
 		if parent == dir {
@@ -47,7 +66,18 @@ func LoadNeterConfig() (*NeterConfig, error) {
 		dir = parent
 	}
 
-	return nil, fmt.Errorf("neter.yml not found in project tree")
+	return nil, fmt.Errorf("%w in project tree", ErrNeterConfigNotFound)
+}
+
+func LoadOptionalNeterConfig() (*NeterConfig, error) {
+	cfg, err := LoadNeterConfig()
+	if err != nil {
+		if errors.Is(err, ErrNeterConfigNotFound) {
+			return nil, nil
+		}
+		return nil, err
+	}
+	return cfg, nil
 }
 
 func parseNeterFile(path string) (*NeterConfig, error) {
@@ -62,6 +92,65 @@ func parseNeterFile(path string) (*NeterConfig, error) {
 	}
 
 	return &cfg, nil
+}
+
+func DefaultDevConfig() DevConfig {
+	return DevConfig{
+		Backend: DevBackendConfig{
+			Cmd: "",
+		},
+		Frontend: DevFrontendConfig{
+			Dir: "web",
+			Pm:  "pnpm",
+			Cmd: "run dev",
+		},
+	}
+}
+
+func (c *NeterConfig) EffectiveDevConfig() DevConfig {
+	cfg := DefaultDevConfig()
+	if c == nil {
+		return cfg
+	}
+
+	if c.Dev.Backend.Cmd != "" {
+		cfg.Backend.Cmd = c.Dev.Backend.Cmd
+	}
+	if c.Dev.Frontend.Dir != "" {
+		cfg.Frontend.Dir = c.Dev.Frontend.Dir
+	}
+	if c.Dev.Frontend.Pm != "" {
+		cfg.Frontend.Pm = c.Dev.Frontend.Pm
+	}
+	if c.Dev.Frontend.Cmd != "" {
+		cfg.Frontend.Cmd = c.Dev.Frontend.Cmd
+	}
+
+	return cfg
+}
+
+func ExampleNeterConfigYAML() string {
+	return `# Example neter.yml
+ldflags:
+  - package: main
+    vars:
+      buildTime: "${datetime}"
+      gitHash: "${git_hash}"
+      goVersion: "${go_version}"
+  - package: your/module/path/internal/version
+    vars:
+      env: "prod"
+      date: "${date}"
+      timestampMs: "${timestamp_ms}"
+
+dev:
+  backend:
+    cmd: "nr run -dr"
+  frontend:
+    dir: "web"
+    pm: "pnpm"
+    cmd: "run dev"
+`
 }
 
 // BuildLdflags constructs the -ldflags string for go build.
