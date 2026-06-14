@@ -24,7 +24,7 @@ var buildCmd = &cobra.Command{
 	Use:   "build",
 	Short: "build the final binary",
 	Run: func(cmd *cobra.Command, args []string) {
-		start := time.Now() // 添加开始时间
+		start := time.Now()
 
 		// Collect active flags
 		name := cmd.Flag("name").Value.String()
@@ -59,7 +59,7 @@ var buildCmd = &cobra.Command{
 			case "windows":
 				win = true
 			default:
-				log.Printf("warning: unsupported OS %s, defaulting to current OS", runtime.GOOS)
+				logCommandWarn("build", "unsupported OS %s, defaulting to current OS", runtime.GOOS)
 			}
 			// When no platform is specified, always use current arch if not explicitly set
 			if !cmd.Flags().Changed("arch") {
@@ -70,7 +70,7 @@ var buildCmd = &cobra.Command{
 		// Initialize hook manager
 		hookManager := hook.NewHookManager()
 		if err := hookManager.LoadConfig(); err != nil {
-			log.Printf("[hook] warning: %v", err)
+			logCommandWarn("hook", "%v", err)
 		}
 
 		var activeFlags []string
@@ -86,24 +86,25 @@ var buildCmd = &cobra.Command{
 
 		// Execute on_start hooks
 		if err := hookManager.ExecuteHooks("on_start"); err != nil {
-			log.Printf("[hook] warning: %v", err)
+			logCommandWarn("hook", "%v", err)
 		}
 
 		// Ensure on_stop hooks are executed even if build fails
 		defer func() {
 			if err := hookManager.ExecuteHooks("on_stop"); err != nil {
-				log.Printf("[hook] warning: %v", err)
+				logCommandWarn("hook", "%v", err)
 			}
 		}()
 
 		appRoot, err := resolveAppRoot(dir, cmd.Flags().Changed("dir"), "build")
 		if err != nil {
-			log.Fatal(err.Error())
+			log.Fatalf("[build] %s", err.Error())
 			return
 		}
 		if appRoot == "" {
 			return
 		}
+		logCommandStep("build", "app=%s arch=%s", appRoot, arch)
 
 		if web {
 			checkErr(buildWebAssets(pm))
@@ -137,7 +138,7 @@ var buildCmd = &cobra.Command{
 
 		// Execute before_binary hooks
 		if err := hookManager.ExecuteHooks("before_binary"); err != nil {
-			log.Printf("[hook] warning: %v", err)
+			logCommandWarn("hook", "%v", err)
 		}
 
 		gitHash, _ := core.GetGitHash()
@@ -145,8 +146,7 @@ var buildCmd = &cobra.Command{
 		for _, c := range Config {
 			if c.Build {
 				buildAppName = append(buildAppName, c.Name)
-				// generate app
-				log.Printf("building [%s] app", c.Type)
+				logCommandStep("build", "building %s binary -> %s", c.Type, c.Name)
 				// var buildStr = fmt.Sprintf(`build -trimpath -ldflags "-s -w -extldflags '-static'" -o %s %s`, c.Name, buildPath)
 				// buildArgs, err := windows.DecomposeCommandLine(buildStr)
 				if buildNum == 1 && output != "" {
@@ -167,11 +167,11 @@ var buildCmd = &cobra.Command{
 					if prod {
 						neterCfg, neterErr := core.LoadNeterConfig()
 						if neterErr != nil {
-							log.Printf("[neter] warning: %v", neterErr)
+							logCommandWarn("neter", "%v", neterErr)
 						} else if neterLdflags := neterCfg.BuildLdflags(); neterLdflags != "" {
 							ldflags.WriteString(" ")
 							ldflags.WriteString(neterLdflags)
-							log.Printf("[neter] injected ldflags from neter.yml")
+							logCommandSuccess("neter", "injected ldflags from neter.yml")
 						}
 					}
 					buildArgs = append(buildArgs, "-trimpath", ldflags.String())
@@ -180,29 +180,29 @@ var buildCmd = &cobra.Command{
 				buildArgs = append(buildArgs, "-o", c.Name)
 				buildArgs = append(buildArgs, buildPath)
 
-				log.Println("build args: ", strings.Join(buildArgs, " "))
+				logCommandStep("build", "go %s", strings.Join(buildArgs, " "))
 
 				var (
 					res string
 					err error
 				)
 
-				if res, err = runCommandWithEnv("go", c.Env, buildArgs...); err != nil {
-					log.Println("\n" + res)
-					log.Fatalf("go build error: %v", err)
+				if res, err = core.RunWithDir("go", "", c.Env, buildArgs...); err != nil {
+					logCommandOutput("build", "go build output", res)
+					log.Fatalf("[build] go build failed: %v", err)
 					return
 				}
-				log.Println("\n" + res)
+				logCommandOutput("build", "go build output", res)
+				logCommandSuccess("build", "built %s", c.Name)
 
 				if dlv {
-					log.Println("now, you can debug with dlv: ")
-					log.Printf(`dlv --listen=:2345 --headless=true --api-version=2 --accept-multiclient exec ./%s %s`, c.Name, cmdStr)
+					logCommandStep("build", "debug command: dlv --listen=:2345 --headless=true --api-version=2 --accept-multiclient exec ./%s %s", c.Name, cmdStr)
 
 					if run {
 						//env, err := runEnv("dlv", []string{}, "--listen=:2345", "--headless=true", "--api-version=2", "--accept-multiclient", "exec", c.Name)
 						err := core.RunAsync("dlv", "--listen=:2345", "--headless=true", "--api-version=2", "--accept-multiclient", "exec", c.Name, cmdStr)
 						if err != nil {
-							log.Fatalf("run dlv error: %v", err)
+							log.Fatalf("[build] start dlv failed: %v", err)
 							return
 						}
 					}
@@ -212,7 +212,7 @@ var buildCmd = &cobra.Command{
 		}
 
 		if html {
-			log.Println("build web / template")
+			logCommandStep("build", "packing web template archive")
 			root, _ := os.Getwd()
 			bh := core.NewBuildHtml(root, buildAppName)
 			err := bh.Check()
@@ -223,12 +223,10 @@ var buildCmd = &cobra.Command{
 			utils.CheckErrWithStatus(err)
 			err = bh.Tar(buildAppName, path.Join(root, "build", "web.tar.gz"))
 			utils.CheckErrWithStatus(err)
-			log.Println("build web / template success")
+			logCommandSuccess("build", "packed build/web.tar.gz")
 		}
 
-		// 构建结束，输出耗时日志
-		elapsed := time.Since(start)
-		log.Printf("构建完成，耗时: %s", elapsed)
+		logCommandSummary("build", start, "built %d binary(s)", len(buildAppName))
 	},
 }
 

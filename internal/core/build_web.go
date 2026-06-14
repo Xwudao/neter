@@ -1,7 +1,6 @@
 package core
 
 import (
-	"log"
 	"os"
 	"path/filepath"
 
@@ -40,18 +39,13 @@ func (b *BuildWeb) Build() error {
 	var res string
 	var err error
 	if res, err = RunWithDir(b.pm, b.frontRoot, nil, "install"); err != nil {
-		log.Println("\n" + res)
-		log.Fatalf("npm install error: %v", err)
 		return err
 	}
-	log.Println("\n" + res)
 
 	if res, err = RunWithDir(b.pm, b.frontRoot, nil, "run", "build"); err != nil {
-		log.Println("\n" + res)
-		log.Fatalf("npm build error: %v", err)
 		return err
 	}
-	log.Println("\n" + res)
+	_ = res
 
 	return nil
 }

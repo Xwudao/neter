@@ -2,7 +2,6 @@ package cmd
 
 import (
 	"fmt"
-	"log"
 	"os"
 	"path/filepath"
 	"sort"
@@ -127,7 +126,7 @@ func scanCommandDirs(dir string, rootDir string) (map[string]string, error) {
 }
 
 func buildWebAssets(pm string) error {
-	log.Println("build with web assets")
+	logCommandStep("web", "building web assets with %s", pm)
 	b := core.NewBuildWeb(pm)
 	if err := b.Check(); err != nil {
 		return err
@@ -139,7 +138,7 @@ func buildWebAssets(pm string) error {
 		return err
 	}
 
-	log.Println("build web assets success")
+	logCommandSuccess("web", "web assets copied to assets/dist")
 	return nil
 }
 
@@ -159,14 +158,6 @@ func findInternalDataDir() (string, error) {
 	}
 
 	return schemaDir, nil
-}
-
-func runCommand(name string, args ...string) (string, error) {
-	return core.RunWithDir(name, "", nil, args...)
-}
-
-func runCommandWithEnv(name string, env []string, args ...string) (string, error) {
-	return core.RunWithDir(name, "", env, args...)
 }
 
 func checkErr(err error) {
