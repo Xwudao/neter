@@ -19,6 +19,10 @@ func TestExampleNeterConfigYAMLContainsAllSupportedSections(t *testing.T) {
 		`dir: "web"`,
 		`pm: "pnpm"`,
 		`cmd: "run dev"`,
+		"hooks:",
+		"items:",
+		`event: "on_start"`,
+		`action: "scripts/pre_build.sh"`,
 	}
 
 	for _, want := range wants {

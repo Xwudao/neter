@@ -1,6 +1,13 @@
 package hook
 
-import "testing"
+import (
+	"bytes"
+	"log"
+	"os"
+	"path/filepath"
+	"strings"
+	"testing"
+)
 
 func TestShouldRunOnPlatform(t *testing.T) {
 	testCases := []struct {
@@ -60,5 +67,99 @@ func TestShouldRunOnPlatform(t *testing.T) {
 				t.Fatalf("shouldRunOnPlatform(%q, %q) = %v, want %v", tc.goos, tc.action, got, tc.want)
 			}
 		})
+	}
+}
+
+func TestLoadConfigFromNeterYAML(t *testing.T) {
+	dir := t.TempDir()
+	writeTestFile(t, filepath.Join(dir, "go.mod"), "module example.com/test\n")
+	writeTestFile(t, filepath.Join(dir, "neter.yml"), `hooks:
+  enabled: true
+  items:
+    - event: "on_start"
+      action: "echo test"
+      depends:
+        flags: ["--web"]
+`)
+
+	restore := chdirForTest(t, dir)
+	defer restore()
+
+	manager := NewHookManager()
+	if err := manager.LoadConfig(); err != nil {
+		t.Fatalf("LoadConfig() error = %v", err)
+	}
+
+	if !manager.loaded {
+		t.Fatal("expected config to be loaded from neter.yml")
+	}
+	if !manager.config.App.Enabled {
+		t.Fatal("expected hooks to be enabled")
+	}
+	if len(manager.config.App.Hooks) != 1 {
+		t.Fatalf("expected 1 hook, got %d", len(manager.config.App.Hooks))
+	}
+	if manager.config.App.Hooks[0].Event != "on_start" {
+		t.Fatalf("expected event on_start, got %q", manager.config.App.Hooks[0].Event)
+	}
+}
+
+func TestLoadConfigWarnsWhenLegacyHookRunExists(t *testing.T) {
+	dir := t.TempDir()
+	writeTestFile(t, filepath.Join(dir, "go.mod"), "module example.com/test\n")
+	writeTestFile(t, filepath.Join(dir, "neter.yml"), `hooks:
+  enabled: true
+  items:
+    - event: "on_start"
+      action: "echo test"
+`)
+	writeTestFile(t, filepath.Join(dir, "hook_run.yml"), `app:
+  enabled: true
+  hooks:
+    - event: "on_start"
+      action: "echo old"
+`)
+
+	restore := chdirForTest(t, dir)
+	defer restore()
+
+	var buf bytes.Buffer
+	oldWriter := log.Writer()
+	oldFlags := log.Flags()
+	log.SetOutput(&buf)
+	log.SetFlags(0)
+	defer log.SetOutput(oldWriter)
+	defer log.SetFlags(oldFlags)
+
+	manager := NewHookManager()
+	if err := manager.LoadConfig(); err != nil {
+		t.Fatalf("LoadConfig() error = %v", err)
+	}
+
+	if !strings.Contains(buf.String(), "legacy") || !strings.Contains(buf.String(), "neter.yml -> hooks") {
+		t.Fatalf("expected migration warning, got %q", buf.String())
+	}
+}
+
+func writeTestFile(t *testing.T, path, content string) {
+	t.Helper()
+	if err := os.WriteFile(path, []byte(content), 0o644); err != nil {
+		t.Fatalf("WriteFile(%q) error = %v", path, err)
+	}
+}
+
+func chdirForTest(t *testing.T, dir string) func() {
+	t.Helper()
+	wd, err := os.Getwd()
+	if err != nil {
+		t.Fatalf("Getwd() error = %v", err)
+	}
+	if err := os.Chdir(dir); err != nil {
+		t.Fatalf("Chdir(%q) error = %v", dir, err)
+	}
+	return func() {
+		if err := os.Chdir(wd); err != nil {
+			t.Fatalf("restore Chdir(%q) error = %v", wd, err)
+		}
 	}
 }

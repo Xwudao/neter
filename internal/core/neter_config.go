@@ -36,10 +36,26 @@ type DevFrontendConfig struct {
 	Cmd string `yaml:"cmd"`
 }
 
+type HooksConfig struct {
+	Enabled bool             `yaml:"enabled"`
+	Items   []HookItemConfig `yaml:"items"`
+}
+
+type HookItemConfig struct {
+	Event   string             `yaml:"event"`
+	Action  string             `yaml:"action"`
+	Depends *HookDependsConfig `yaml:"depends,omitempty"`
+}
+
+type HookDependsConfig struct {
+	Flags []string `yaml:"flags"`
+}
+
 // NeterConfig represents the neter.yml project build configuration.
 type NeterConfig struct {
 	Ldflags []LdflagVar `yaml:"ldflags"`
 	Dev     DevConfig   `yaml:"dev"`
+	Hooks   HooksConfig `yaml:"hooks"`
 }
 
 // LoadNeterConfig reads and parses the neter.yml file from the project root.
@@ -150,6 +166,16 @@ dev:
     dir: "web"
     pm: "pnpm"
     cmd: "run dev"
+
+hooks:
+  enabled: true
+  items:
+    - event: "on_start"
+      action: "scripts/pre_build.sh"
+      depends:
+        flags: ["--web"]
+    - event: "on_stop"
+      action: "scripts/cleanup.sh"
 `
 }
 

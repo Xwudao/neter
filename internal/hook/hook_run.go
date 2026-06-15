@@ -10,24 +10,28 @@ import (
 	"slices"
 	"strings"
 
+	"github.com/Xwudao/neter/internal/core"
 	"gopkg.in/yaml.v3"
 )
 
 /*
-hook_run.yml
+Primary config now lives in neter.yml:
+
+hooks:
+	enabled: true
+	items:
+		- event: "on_start"
+		  action: "scripts/pre_build.sh"
+		  depends:
+		    flags: ["--web"]
+
+Legacy hook_run.yml is still supported for migration:
 
 app:
 	enabled: true
 	hooks:
 		- event: "on_start"
-		  action: "xxx cmd to run, eg:　scripts/updatexx.bat"
-		  depends:
-		    - flags: ["--web"]
-		- event: "before_binary"
-		  action: "scripts/pre_build.bat"
-		- event: "on_stop"
-		  action: "stop_app"
-
+		  action: "scripts/pre_build.sh"
 */
 
 type HookConfig struct {
@@ -60,21 +64,30 @@ func NewHookManager() *HookManager {
 }
 
 func (h *HookManager) LoadConfig() error {
-	configPath := "hook_run.yml"
-	if _, err := os.Stat(configPath); os.IsNotExist(err) {
-		log.Println("[hook] hook_run.yml not found, skipping hooks")
+	neterCfg, err := core.LoadOptionalNeterConfig()
+	if err != nil {
+		return fmt.Errorf("load neter.yml: %w", err)
+	}
+
+	if neterCfg != nil && hasHookItems(neterCfg.Hooks) {
+		h.config = hookConfigFromNeter(neterCfg.Hooks)
+		h.loaded = true
+		if legacyPath, ok := findLegacyHookConfig(); ok {
+			log.Printf("[hook] detected legacy %s; please move hook config into neter.yml -> hooks", legacyPath)
+		}
 		return nil
 	}
 
-	data, err := os.ReadFile(configPath)
-	if err != nil {
-		return fmt.Errorf("failed to read hook_run.yml: %v", err)
+	legacyPath, ok := findLegacyHookConfig()
+	if !ok {
+		log.Println("[hook] hooks not configured in neter.yml, skipping hooks")
+		return nil
 	}
 
-	if err := yaml.Unmarshal(data, &h.config); err != nil {
-		return fmt.Errorf("failed to parse hook_run.yml: %v", err)
+	log.Printf("[hook] detected legacy %s; please move hook config into neter.yml -> hooks", legacyPath)
+	if err := h.loadLegacyConfig(legacyPath); err != nil {
+		return err
 	}
-
 	h.loaded = true
 	return nil
 }
@@ -145,6 +158,69 @@ func shouldRunOnPlatform(goos, action string) bool {
 	default:
 		return ext != ".bat" && ext != ".cmd"
 	}
+}
+
+func hasHookItems(cfg core.HooksConfig) bool {
+	return cfg.Enabled || len(cfg.Items) > 0
+}
+
+func hookConfigFromNeter(cfg core.HooksConfig) HookConfig {
+	items := make([]HookItem, 0, len(cfg.Items))
+	for _, item := range cfg.Items {
+		var depends *HookDepends
+		if item.Depends != nil {
+			depends = &HookDepends{Flags: append([]string(nil), item.Depends.Flags...)}
+		}
+		items = append(items, HookItem{
+			Event:   item.Event,
+			Action:  item.Action,
+			Depends: depends,
+		})
+	}
+
+	return HookConfig{
+		App: AppConfig{
+			Enabled: cfg.Enabled,
+			Hooks:   items,
+		},
+	}
+}
+
+func findLegacyHookConfig() (string, bool) {
+	dir, err := os.Getwd()
+	if err != nil {
+		return "", false
+	}
+
+	for range 10 {
+		p := filepath.Join(dir, "hook_run.yml")
+		if _, statErr := os.Stat(p); statErr == nil {
+			return p, true
+		}
+		if _, statErr := os.Stat(filepath.Join(dir, "go.mod")); statErr == nil {
+			return "", false
+		}
+		parent := filepath.Dir(dir)
+		if parent == dir {
+			break
+		}
+		dir = parent
+	}
+
+	return "", false
+}
+
+func (h *HookManager) loadLegacyConfig(configPath string) error {
+	data, err := os.ReadFile(configPath)
+	if err != nil {
+		return fmt.Errorf("failed to read hook_run.yml: %v", err)
+	}
+
+	if err := yaml.Unmarshal(data, &h.config); err != nil {
+		return fmt.Errorf("failed to parse hook_run.yml: %v", err)
+	}
+
+	return nil
 }
 
 func (h *HookManager) executeCommand(action string) error {
