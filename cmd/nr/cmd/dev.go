@@ -48,6 +48,7 @@ const (
 )
 
 var devURLPattern = regexp.MustCompile(`https?://[^\s"'<>]+`)
+var devLocalURLPattern = regexp.MustCompile(`(?:^|\s)Local:\s*(https?://[^\s"'<>]+)`)
 var devANSISequencePattern = regexp.MustCompile(`\x1b\[[0-9;?]*[ -/]*[@-~]`)
 
 type devProcessSpec struct {
@@ -533,11 +534,11 @@ func formatDevOutputLine(name string, color string, line string) string {
 
 func detectFrontendURL(line string) (string, bool) {
 	line = sanitizeDevOutputLine(line)
-	match := devURLPattern.FindString(line)
-	if match == "" {
+	match := devLocalURLPattern.FindStringSubmatch(line)
+	if len(match) < 2 {
 		return "", false
 	}
-	parsed, err := url.Parse(match)
+	parsed, err := url.Parse(match[1])
 	if err != nil || parsed.Scheme == "" || parsed.Host == "" {
 		return "", false
 	}

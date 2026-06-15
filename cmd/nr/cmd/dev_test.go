@@ -216,6 +216,13 @@ func TestDetectFrontendURLInvalid(t *testing.T) {
 	}
 }
 
+func TestDetectFrontendURLIgnoresNonLocalURL(t *testing.T) {
+	line := "  UnoCSS Inspector: http://localhost:5174/__unocss/"
+	if got, ok := detectFrontendURL(line); ok || got != "" {
+		t.Fatalf("expected no local url, got %q ok=%v", got, ok)
+	}
+}
+
 func TestBrowserOpenCommand(t *testing.T) {
 	name, args, err := browserOpenCommand("http://localhost:5173/")
 	if err != nil {
