@@ -152,6 +152,7 @@ ldflags:
     vars:
       buildTime: "${datetime}"
       gitHash: "${git_hash}"
+      gitTag: "${git_tag}"
       goVersion: "${go_version}"
   - package: your/module/path/internal/version
     vars:
@@ -194,6 +195,7 @@ hooks:
 //   - ${day}           current day (01-31)
 //   - ${git_hash}      short git commit hash (7 chars)
 //   - ${git_hash_full} full git commit hash
+//   - ${git_tag}       latest git tag (from git describe --tags --abbrev=0)
 //   - ${go_version}    Go runtime version
 func (c *NeterConfig) BuildLdflags() string {
 	if len(c.Ldflags) == 0 {
@@ -258,6 +260,12 @@ func getBuiltinVar(name string) (string, bool) {
 			return "", true
 		}
 		return hash, true
+	case "git_tag":
+		tag, err := GetGitTag()
+		if err != nil {
+			return "", true
+		}
+		return tag, true
 	case "go_version":
 		return runtime.Version(), true
 	default:

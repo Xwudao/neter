@@ -24,3 +24,18 @@ func GetGitHash() (string, error) {
 	// Return the commit hash
 	return strings.TrimSpace(out.String()), nil
 }
+
+// GetGitTag fetches the latest Git tag (most recent, reachable from HEAD).
+func GetGitTag() (string, error) {
+	cmd := exec.Command("git", "describe", "--tags", "--abbrev=0")
+	var out bytes.Buffer
+	cmd.Stdout = &out
+	cmd.Stderr = &out
+
+	err := cmd.Run()
+	if err != nil {
+		return "", fmt.Errorf("failed to get git tag: %v", err)
+	}
+
+	return strings.TrimSpace(out.String()), nil
+}

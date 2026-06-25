@@ -12,6 +12,7 @@ func TestExampleNeterConfigYAMLContainsAllSupportedSections(t *testing.T) {
 		"ldflags:",
 		"package: main",
 		"vars:",
+		`gitTag: "${git_tag}"`,
 		"dev:",
 		"backend:",
 		`cmd: "nr run -dr"`,

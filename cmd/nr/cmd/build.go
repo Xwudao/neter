@@ -142,6 +142,7 @@ var buildCmd = &cobra.Command{
 		}
 
 		gitHash, _ := core.GetGitHash()
+		gitTag, _ := core.GetGitTag()
 
 		for _, c := range Config {
 			if c.Build {
@@ -158,6 +159,7 @@ var buildCmd = &cobra.Command{
 				ldflags.WriteString(`-ldflags=-s -w -extldflags '-static'`)
 				ldflags.WriteString(fmt.Sprintf(` -X 'main.buildTime=%s'`, time.Now().In(utils.CST).Format(time.DateTime)))
 				ldflags.WriteString(fmt.Sprintf(` -X 'main.gitHash=%s'`, gitHash))
+				ldflags.WriteString(fmt.Sprintf(` -X 'main.gitTag=%s'`, gitTag))
 				ldflags.WriteString(fmt.Sprintf(` -X 'main.goVersion=%s'`, runtime.Version()))
 
 				if dlv {

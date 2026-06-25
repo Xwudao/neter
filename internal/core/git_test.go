@@ -26,3 +26,27 @@ func TestGetGitHash(t *testing.T) {
 		})
 	}
 }
+
+func TestGetGitTag(t *testing.T) {
+	tests := []struct {
+		name    string
+		wantErr bool
+	}{
+		{
+			name:    "Get Git Tag",
+			wantErr: false, // may fail if no tags exist, but normally should succeed
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			tag, err := GetGitTag()
+			if (err != nil) != tt.wantErr {
+				t.Errorf("GetGitTag() error = %v, wantErr %v", err, tt.wantErr)
+				return
+			}
+			if err == nil && tag != "" {
+				t.Logf("latest tag: %s", tag)
+			}
+		})
+	}
+}
