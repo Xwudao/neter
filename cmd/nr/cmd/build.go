@@ -141,15 +141,10 @@ var buildCmd = &cobra.Command{
 			logCommandWarn("hook", "%v", err)
 		}
 
-		gitHash, _ := core.GetGitHash()
-		gitTag, _ := core.GetGitTag()
-
 		for _, c := range Config {
 			if c.Build {
 				buildAppName = append(buildAppName, c.Name)
 				logCommandStep("build", "building %s binary -> %s", c.Type, c.Name)
-				// var buildStr = fmt.Sprintf(`build -trimpath -ldflags "-s -w -extldflags '-static'" -o %s %s`, c.Name, buildPath)
-				// buildArgs, err := windows.DecomposeCommandLine(buildStr)
 				if buildNum == 1 && output != "" {
 					c.Name = output
 				}
@@ -157,24 +152,18 @@ var buildCmd = &cobra.Command{
 
 				var ldflags bytes.Buffer
 				ldflags.WriteString(`-ldflags=-s -w -extldflags '-static'`)
-				ldflags.WriteString(fmt.Sprintf(` -X 'main.buildTime=%s'`, time.Now().In(utils.CST).Format(time.DateTime)))
-				ldflags.WriteString(fmt.Sprintf(` -X 'main.gitHash=%s'`, gitHash))
-				ldflags.WriteString(fmt.Sprintf(` -X 'main.gitTag=%s'`, gitTag))
-				ldflags.WriteString(fmt.Sprintf(` -X 'main.goVersion=%s'`, runtime.Version()))
 
 				if dlv {
 					buildArgs = append(buildArgs, `-gcflags=all=-N -l`)
 				} else if trim {
-					// Append neter.yml ldflags for production builds
-					if prod {
-						neterCfg, neterErr := core.LoadNeterConfig()
-						if neterErr != nil {
-							logCommandWarn("neter", "%v", neterErr)
-						} else if neterLdflags := neterCfg.BuildLdflags(); neterLdflags != "" {
-							ldflags.WriteString(" ")
-							ldflags.WriteString(neterLdflags)
-							logCommandSuccess("neter", "injected ldflags from neter.yml")
-						}
+					// Append ldflags from neter.yml
+					neterCfg, neterErr := core.LoadNeterConfig()
+					if neterErr != nil {
+						logCommandWarn("neter", "%v", neterErr)
+					} else if neterLdflags := neterCfg.BuildLdflags(); neterLdflags != "" {
+						ldflags.WriteString(" ")
+						ldflags.WriteString(neterLdflags)
+						logCommandSuccess("neter", "injected ldflags from neter.yml")
 					}
 					buildArgs = append(buildArgs, "-trimpath", ldflags.String())
 				}
