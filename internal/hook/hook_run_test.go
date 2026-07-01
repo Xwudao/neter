@@ -11,10 +11,11 @@ import (
 
 func TestShouldRunOnPlatform(t *testing.T) {
 	testCases := []struct {
-		name   string
-		goos   string
-		action string
-		want   bool
+		name     string
+		goos     string
+		platform string
+		action   string
+		want     bool
 	}{
 		{
 			name:   "windows runs bat",
@@ -58,13 +59,77 @@ func TestShouldRunOnPlatform(t *testing.T) {
 			action: "go version",
 			want:   true,
 		},
+		// Platform field tests
+		{
+			name:     "platform linux runs on linux",
+			goos:     "linux",
+			platform: "linux",
+			action:   "scripts/build.sh",
+			want:     true,
+		},
+		{
+			name:     "platform linux skips on mac",
+			goos:     "darwin",
+			platform: "linux",
+			action:   "scripts/build.sh",
+			want:     false,
+		},
+		{
+			name:     "platform linux skips on windows",
+			goos:     "windows",
+			platform: "linux",
+			action:   "scripts/build.sh",
+			want:     false,
+		},
+		{
+			name:     "platform mac runs on darwin",
+			goos:     "darwin",
+			platform: "mac",
+			action:   "scripts/build.sh",
+			want:     true,
+		},
+		{
+			name:     "platform mac skips on linux",
+			goos:     "linux",
+			platform: "mac",
+			action:   "scripts/build.sh",
+			want:     false,
+		},
+		{
+			name:     "platform windows runs on windows",
+			goos:     "windows",
+			platform: "windows",
+			action:   "scripts\\build.bat",
+			want:     true,
+		},
+		{
+			name:     "platform windows skips on linux",
+			goos:     "linux",
+			platform: "windows",
+			action:   "scripts\\build.bat",
+			want:     false,
+		},
+		{
+			name:     "empty platform falls back to extension check",
+			goos:     "linux",
+			platform: "",
+			action:   "scripts/build.sh",
+			want:     true,
+		},
+		{
+			name:     "empty platform falls back to extension check - bat on linux",
+			goos:     "linux",
+			platform: "",
+			action:   "scripts\\build.bat",
+			want:     false,
+		},
 	}
 
 	for _, tc := range testCases {
 		t.Run(tc.name, func(t *testing.T) {
-			got := shouldRunOnPlatform(tc.goos, tc.action)
+			got := shouldRunOnPlatform(tc.goos, tc.platform, tc.action)
 			if got != tc.want {
-				t.Fatalf("shouldRunOnPlatform(%q, %q) = %v, want %v", tc.goos, tc.action, got, tc.want)
+				t.Fatalf("shouldRunOnPlatform(%q, %q, %q) = %v, want %v", tc.goos, tc.platform, tc.action, got, tc.want)
 			}
 		})
 	}
