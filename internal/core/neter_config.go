@@ -42,10 +42,10 @@ type HooksConfig struct {
 }
 
 type HookItemConfig struct {
-	Event    string             `yaml:"event"`
-	Action   string             `yaml:"action"`
-	Platform string             `yaml:"platform,omitempty"`
-	Depends  *HookDependsConfig `yaml:"depends,omitempty"`
+	Event     string             `yaml:"event"`
+	Action    string             `yaml:"action"`
+	Platforms []string           `yaml:"platforms,omitempty"`
+	Depends   *HookDependsConfig `yaml:"depends,omitempty"`
 }
 
 type HookDependsConfig struct {
@@ -178,9 +178,10 @@ hooks:
         flags: ["--web"]
     - event: "on_start"
       action: "scripts/build_windows.bat"
-      platform: windows
-    - event: "on_stop"
-      action: "scripts/cleanup.sh"
+      platforms: ["windows"]
+    - event: "on_start"
+      action: "scripts/deploy.sh"
+      platforms: ["linux", "macos"]
 `
 }
 

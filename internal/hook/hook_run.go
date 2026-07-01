@@ -44,10 +44,10 @@ type AppConfig struct {
 }
 
 type HookItem struct {
-	Event    string       `yaml:"event"`
-	Action   string       `yaml:"action"`
-	Platform string       `yaml:"platform,omitempty"`
-	Depends  *HookDepends `yaml:"depends,omitempty"`
+	Event     string       `yaml:"event"`
+	Action    string       `yaml:"action"`
+	Platforms []string     `yaml:"platforms,omitempty"`
+	Depends   *HookDepends `yaml:"depends,omitempty"`
 }
 
 type HookDepends struct {
@@ -138,13 +138,13 @@ func (h *HookManager) checkFlagDependencies(requiredFlags []string) bool {
 }
 
 func shouldRunOnCurrentPlatform(hook HookItem) bool {
-	return shouldRunOnPlatform(runtime.GOOS, hook.Platform, hook.Action)
+	return shouldRunOnPlatform(runtime.GOOS, hook.Platforms, hook.Action)
 }
 
-func shouldRunOnPlatform(goos, platform, action string) bool {
+func shouldRunOnPlatform(goos string, platforms []string, action string) bool {
 	// Check explicit platform restriction
-	if platform != "" {
-		return matchPlatform(goos, platform)
+	if len(platforms) > 0 {
+		return matchPlatforms(goos, platforms)
 	}
 
 	// Fall back to extension-based check
@@ -167,20 +167,26 @@ func shouldRunOnPlatform(goos, platform, action string) bool {
 	}
 }
 
-// matchPlatform checks whether the current OS matches the configured platform.
-// Supported platform values: "linux", "mac" (maps to darwin), "windows".
-func matchPlatform(goos, platform string) bool {
-	switch strings.ToLower(platform) {
-	case "linux":
-		return goos == "linux"
-	case "mac":
-		return goos == "darwin"
-	case "windows":
-		return goos == "windows"
-	default:
-		// Unknown platform value, allow it to avoid breaking hooks
-		return true
+// matchPlatforms checks whether the current OS matches any of the configured platforms.
+// Supported platform values: "linux", "macos" (or "mac", maps to darwin), "windows".
+func matchPlatforms(goos string, platforms []string) bool {
+	for _, p := range platforms {
+		switch strings.ToLower(p) {
+		case "linux":
+			if goos == "linux" {
+				return true
+			}
+		case "macos", "mac":
+			if goos == "darwin" {
+				return true
+			}
+		case "windows":
+			if goos == "windows" {
+				return true
+			}
+		}
 	}
+	return false
 }
 
 func hasHookItems(cfg core.HooksConfig) bool {
@@ -195,10 +201,10 @@ func hookConfigFromNeter(cfg core.HooksConfig) HookConfig {
 			depends = &HookDepends{Flags: append([]string(nil), item.Depends.Flags...)}
 		}
 		items = append(items, HookItem{
-			Event:    item.Event,
-			Action:   item.Action,
-			Platform: item.Platform,
-			Depends:  depends,
+			Event:     item.Event,
+			Action:    item.Action,
+			Platforms: item.Platforms,
+			Depends:   depends,
 		})
 	}
 
