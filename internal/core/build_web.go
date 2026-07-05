@@ -1,6 +1,7 @@
 package core
 
 import (
+	"fmt"
 	"os"
 	"path/filepath"
 
@@ -39,11 +40,11 @@ func (b *BuildWeb) Build() error {
 	var res string
 	var err error
 	if res, err = RunWithDir(b.pm, b.frontRoot, nil, "install"); err != nil {
-		return err
+		return fmt.Errorf("%s install failed: %s\n%s", b.pm, err, res)
 	}
 
 	if res, err = RunWithDir(b.pm, b.frontRoot, nil, "run", "build"); err != nil {
-		return err
+		return fmt.Errorf("%s run build failed: %s\n%s", b.pm, err, res)
 	}
 	_ = res
 
