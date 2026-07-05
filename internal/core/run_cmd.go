@@ -21,7 +21,16 @@ func RunWithDir(name string, dir string, env []string, args ...string) (string, 
 	cmd.Stderr = &stderr
 	err := cmd.Run()
 	if err != nil {
-		return stderr.String(), err
+		// combine stdout + stderr, because some tools (e.g. vite, webpack)
+		// output error details to stdout instead of stderr.
+		out := stdout.String()
+		if errOut := stderr.String(); errOut != "" {
+			if out != "" {
+				out += "\n"
+			}
+			out += errOut
+		}
+		return out, err
 	}
 	return stdout.String(), nil
 }
