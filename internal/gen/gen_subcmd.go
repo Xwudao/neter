@@ -2,7 +2,7 @@ package gen
 
 import (
 	"bytes"
-	"errors"
+	"fmt"
 	"go/ast"
 	"go/format"
 	"go/parser"
@@ -61,12 +61,12 @@ func (g *GenSubCmd) updateFields() {
 func (g *GenSubCmd) checkFile() error {
 	cmdPath := filepath.Join(g.ModPath, "internal/cmd", g.SnakeName+".go")
 	if _, err := os.Stat(cmdPath); err == nil {
-		return errors.New("cmd file already exists")
+		return fmt.Errorf("cmd file already exists: %s", cmdPath)
 	}
 
 	cmdAppPath := filepath.Join(g.ModPath, "internal/cmd_app", g.SnakeName+".go")
 	if _, err := os.Stat(cmdAppPath); err == nil {
-		return errors.New("cmd_app file already exists")
+		return fmt.Errorf("cmd_app file already exists: %s", cmdAppPath)
 	}
 
 	return nil

@@ -5,6 +5,7 @@ import (
 	"os"
 	"path/filepath"
 
+	"github.com/Xwudao/neter/pkg/filex"
 	"github.com/Xwudao/neter/pkg/utils"
 )
 
@@ -51,21 +52,10 @@ func (b *BuildWeb) Build() error {
 	return nil
 }
 
-// Copy generated dist/ to ./assets/dist/, will delete assets/dist/ first
+// Copy synchronises the generated web/dist/ to ./assets/dist/.
+// Only changed/new files are copied, and stale files in assets/dist/ are removed.
 func (b *BuildWeb) Copy() error {
-	oldAssetsPath := filepath.Join(b.assetsDir, "dist")
-	if err := os.RemoveAll(oldAssetsPath); err != nil {
-		return err
-	}
-
-	webDistPath := filepath.Join(b.frontRoot, "dist")
-	//if err := utils.CopyDir(webDistPath, oldAssetsPath); err != nil {
-	//	return err
-	//}
-
-	if err := os.CopyFS(oldAssetsPath, os.DirFS(webDistPath)); err != nil {
-		return err
-	}
-
-	return nil
+	src := filepath.Join(b.frontRoot, "dist")
+	dst := filepath.Join(b.assetsDir, "dist")
+	return filex.SyncDir(src, dst)
 }

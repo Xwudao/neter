@@ -427,7 +427,7 @@ func (g *Generator) addPackageImport(fset *token.FileSet, f *ast.File) {
 
 func (g *Generator) checkFile(path string) error {
 	if _, err := os.Stat(path); err == nil {
-		return errors.New("file already exists")
+		return fmt.Errorf("file already exists: %s", path)
 	}
 
 	return nil
