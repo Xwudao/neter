@@ -8,6 +8,7 @@ import (
 	"log"
 	"os"
 	"path/filepath"
+	"reflect"
 	"regexp"
 	"strings"
 )
@@ -1057,8 +1058,7 @@ func (ra *routeAnalyzer) extractFieldsFromStruct(st *ast.StructType) []FieldInfo
 			if f.Tag != nil {
 				tagRaw := strings.Trim(f.Tag.Value, "`")
 				fi.Tag = tagRaw
-				if strings.Contains(tagRaw, `binding:"required"`) ||
-					strings.Contains(tagRaw, `binding:\"required\"`) {
+				if bindingTagRequired(tagRaw) {
 					fi.Required = true
 				}
 			}
@@ -1082,6 +1082,18 @@ func (ra *routeAnalyzer) extractFieldsFromStruct(st *ast.StructType) []FieldInfo
 		}
 	}
 	return fields
+}
+
+// bindingTagRequired reports whether the Gin binding rule list contains the
+// required rule. Binding tags frequently include additional validators, e.g.
+// binding:"required,alphanum,min=6", so an exact tag match is insufficient.
+func bindingTagRequired(tag string) bool {
+	for _, rule := range strings.Split(reflect.StructTag(tag).Get("binding"), ",") {
+		if strings.TrimSpace(rule) == "required" {
+			return true
+		}
+	}
+	return false
 }
 
 // resolveNestedTypeName resolves a qualified type name like "params.SyncDiskTagItem"

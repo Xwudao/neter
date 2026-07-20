@@ -35,7 +35,7 @@ func (r *UserRoute) create() core.WrappedHandlerFunc {
 	writeRouteInfoFixture(t, root, "params/request.go", `package params
 
 type CreateUserRequest struct {
-    Name string `+"`json:\"name\" binding:\"required\"`"+`
+    Name string `+"`json:\"name\" binding:\"required,alphanum,min=6,max=20\"`"+`
     Profile Profile `+"`json:\"profile\"`"+`
     Tags []Tag `+"`json:\"tags\"`"+`
 }
@@ -58,6 +58,9 @@ type Tag struct { Value string `+"`json:\"value\"`"+` }
 	}
 	if len(route.Params) != 1 || len(route.Params[0].Fields) != 3 {
 		t.Fatalf("params = %#v, want expanded request fields", route.Params)
+	}
+	if !route.Params[0].Fields[0].Required {
+		t.Fatalf("name field = %#v, want required with additional binding rules", route.Params[0].Fields[0])
 	}
 	if got := route.Params[0].Fields[1].Fields; len(got) != 1 || got[0].Name != "Email" {
 		t.Fatalf("profile fields = %#v, want Email", got)
