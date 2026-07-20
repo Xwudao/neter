@@ -23,6 +23,7 @@ func AnalyzeRoutes(projectRoot string) (*ProjectRoutes, error) {
 		parsedCache:    map[string]*ast.File{},
 		structCache:    map[string][]FieldInfo{},
 		groupMapCache:  map[string]string{},
+		resolvingTypes: map[string]bool{},
 	}
 
 	modName, err := readModuleName(projectRoot)
@@ -56,27 +57,19 @@ type routeAnalyzer struct {
 	structCache map[string][]FieldInfo
 	// cache: file path → group var name → group prefix
 	groupMapCache map[string]string
+	// guard: set of cacheKey being resolved (prevents circular recursion)
+	resolvingTypes map[string]bool
 }
 
 // ─── Scanning ────────────────────────────────────────────────────────────────
 
 func (ra *routeAnalyzer) scan() error {
-	// Look for routes in multiple possible locations.
-	candidates := []string{
-		filepath.Join(ra.projectRoot, "internal", "routes"),
-		filepath.Join(ra.projectRoot, "routes"),
+	// Route registration code is commonly, but not exclusively, placed under
+	// routes/. Scan the project root so custom layouts are covered too; only
+	// route structs are analyzed, keeping the additional work small.
+	if err := ra.scanDir(ra.projectRoot, map[string]bool{}); err != nil {
+		return fmt.Errorf("scan project: %w", err)
 	}
-
-	scanned := map[string]bool{}
-	for _, dir := range candidates {
-		if info, err := os.Stat(dir); err != nil || !info.IsDir() {
-			continue
-		}
-		if err := ra.scanDir(dir, scanned); err != nil {
-			log.Printf("warning: scan %s: %v", dir, err)
-		}
-	}
-
 	return nil
 }
 
@@ -88,7 +81,8 @@ func (ra *routeAnalyzer) scanDir(dir string, scanned map[string]bool) error {
 		if d.IsDir() {
 			// Skip middleware directories
 			base := filepath.Base(path)
-			if base == "mdw" || base == "middleware" || base == "node_modules" {
+			if base == ".git" || base == ".agents" || base == "vendor" || base == "node_modules" ||
+				base == "mdw" || base == "middleware" {
 				return filepath.SkipDir
 			}
 			return nil
@@ -161,7 +155,7 @@ func (ra *routeAnalyzer) analyzeFile(filePath string) error {
 		if regMethod == nil {
 			continue
 		}
-		ra.extractRegistrations(filePath, structName, regMethod, methods, imports)
+		ra.extractRegistrations(fset, filePath, structName, regMethod, methods, imports)
 	}
 
 	return nil
@@ -200,6 +194,7 @@ func isMethodOfStruct(fd *ast.FuncDecl, structName string) bool {
 // ─── Extract route registrations from Reg() body ────────────────────────────
 
 func (ra *routeAnalyzer) extractRegistrations(
+	fset *token.FileSet,
 	filePath string,
 	structName string,
 	regMethod *ast.FuncDecl,
@@ -218,33 +213,30 @@ func (ra *routeAnalyzer) extractRegistrations(
 
 	// Second pass: find route registrations in all nested blocks.
 	for _, stmt := range regMethod.Body.List {
-		ra.extractFromBlock(stmt, filePath, groupPrefix, methods, imports)
+		ra.extractFromBlock(fset, stmt, filePath, structName, groupPrefix, methods, imports)
 	}
 }
 
 // findGroupAssignments detects group := r.g.Group("/prefix") patterns.
 func (ra *routeAnalyzer) findGroupAssignments(stmt ast.Stmt, groupPrefix map[string]string) {
-	as, ok := stmt.(*ast.AssignStmt)
-	if !ok {
-		return
-	}
-	if len(as.Lhs) != 1 || len(as.Rhs) != 1 {
-		return
-	}
-
-	ident, ok := as.Lhs[0].(*ast.Ident)
-	if !ok {
-		return
-	}
-
-	prefix := extractGroupPrefix(as.Rhs[0])
-	if prefix != "" {
-		groupPrefix[ident.Name] = prefix
-	}
+	ast.Inspect(stmt, func(n ast.Node) bool {
+		as, ok := n.(*ast.AssignStmt)
+		if !ok || len(as.Lhs) != 1 || len(as.Rhs) != 1 {
+			return true
+		}
+		ident, ok := as.Lhs[0].(*ast.Ident)
+		if !ok {
+			return true
+		}
+		if prefix := extractGroupPrefix(as.Rhs[0], groupPrefix); prefix != "" {
+			groupPrefix[ident.Name] = prefix
+		}
+		return true
+	})
 }
 
 // extractGroupPrefix extracts the URL prefix from r.g.Group("/prefix") chain.
-func extractGroupPrefix(expr ast.Expr) string {
+func extractGroupPrefix(expr ast.Expr, groupPrefix map[string]string) string {
 	// Walk through possible .Use() / .Group() call chains.
 	callExpr, ok := expr.(*ast.CallExpr)
 	if !ok {
@@ -260,7 +252,7 @@ func extractGroupPrefix(expr ast.Expr) string {
 	//   r.g.Group("/prefix").Use(...)
 	if sel.Sel.Name == "Use" {
 		// Recurse into the call receiver (the Group call)
-		return extractGroupPrefix(sel.X)
+		return extractGroupPrefix(sel.X, groupPrefix)
 	}
 
 	// Check for r.g.Group("/prefix")
@@ -273,8 +265,11 @@ func extractGroupPrefix(expr ast.Expr) string {
 		if !ok || bl.Kind != token.STRING {
 			return ""
 		}
-		// Strip quotes
-		return strings.Trim(bl.Value, "\"")
+		prefix := strings.Trim(bl.Value, "\"")
+		if parent, ok := sel.X.(*ast.Ident); ok {
+			return combinePath(groupPrefix[parent.Name], prefix)
+		}
+		return combinePath(extractGroupPrefix(sel.X, groupPrefix), prefix)
 	}
 
 	return ""
@@ -282,8 +277,10 @@ func extractGroupPrefix(expr ast.Expr) string {
 
 // extractFromBlock recursively walks statements to find route registrations.
 func (ra *routeAnalyzer) extractFromBlock(
+	fset *token.FileSet,
 	stmt ast.Stmt,
 	filePath string,
+	structName string,
 	groupPrefix map[string]string,
 	methods map[string]*ast.FuncDecl,
 	imports map[string]string,
@@ -291,18 +288,18 @@ func (ra *routeAnalyzer) extractFromBlock(
 	switch s := stmt.(type) {
 	case *ast.BlockStmt:
 		for _, inner := range s.List {
-			ra.extractFromBlock(inner, filePath, groupPrefix, methods, imports)
+			ra.extractFromBlock(fset, inner, filePath, structName, groupPrefix, methods, imports)
 		}
 
 	case *ast.ExprStmt:
-		ra.extractRouteRegistration(s.X, filePath, groupPrefix, methods, imports)
+		ra.extractRouteRegistration(fset, s.X, filePath, structName, groupPrefix, methods, imports)
 
 	case *ast.AssignStmt:
 		// Also check for group-level calls inside assign statements like:
 		//   _ = group  (to suppress unused variable)
 		if len(s.Rhs) == 1 {
 			if ce, ok := s.Rhs[0].(*ast.CallExpr); ok {
-				ra.extractRouteRegistration(ce, filePath, groupPrefix, methods, imports)
+				ra.extractRouteRegistration(fset, ce, filePath, structName, groupPrefix, methods, imports)
 			}
 		}
 	}
@@ -311,8 +308,10 @@ func (ra *routeAnalyzer) extractFromBlock(
 // extractRouteRegistration checks if an expression is a route registration
 // like group.GET("/path", core.WrapData(r.handler())).
 func (ra *routeAnalyzer) extractRouteRegistration(
+	fset *token.FileSet,
 	expr ast.Expr,
 	filePath string,
+	structName string,
 	groupPrefix map[string]string,
 	methods map[string]*ast.FuncDecl,
 	imports map[string]string,
@@ -328,29 +327,30 @@ func (ra *routeAnalyzer) extractRouteRegistration(
 		return
 	}
 
-	httpMethod := sel.Sel.Name
-	if !isHTTPMethod(httpMethod) {
+	httpMethod, pathIndex := routeMethodAndPathIndex(sel.Sel.Name, callExpr)
+	if httpMethod == "" {
 		return
 	}
 
 	// First argument should be a string literal (path).
-	if len(callExpr.Args) < 2 {
+	if len(callExpr.Args) <= pathIndex+1 {
 		return
 	}
-	pathLit, ok := callExpr.Args[0].(*ast.BasicLit)
-	if !ok || pathLit.Kind != token.STRING {
+	path := extractStringArg(callExpr, pathIndex)
+	if path == "" && !isEmptyStringArg(callExpr, pathIndex) {
 		return
 	}
-	path := strings.Trim(pathLit.Value, "\"")
 
 	// Second (or more) arguments contain the handler.
 	// Look for core.WrapData(r.handler()) style.
 	handlerName := ""
 
-	for i := 1; i < len(callExpr.Args); i++ {
+	handlerIndex := -1
+	for i := pathIndex + 1; i < len(callExpr.Args); i++ {
 		arg := callExpr.Args[i]
 		if name, _ := extractHandlerName(arg); name != "" {
 			handlerName = name
+			handlerIndex = i
 			break
 		}
 	}
@@ -381,10 +381,16 @@ func (ra *routeAnalyzer) extractRouteRegistration(
 		Handler:  handlerName,
 		Group:    groupType,
 		File:     rel,
+		Line:     fset.Position(callExpr.Pos()).Line,
+	}
+	for i := pathIndex + 1; i < len(callExpr.Args); i++ {
+		if i != handlerIndex {
+			info.Middlewares = append(info.Middlewares, exprString(callExpr.Args[i]))
+		}
 	}
 
 	// Find and analyze the handler method.
-	handlerFuncDecl := findHandlerMethod(structNameFromFile(filePath, methods), handlerName, methods)
+	handlerFuncDecl := findHandlerMethod(structName, handlerName, methods)
 	if handlerFuncDecl != nil {
 		// Find the inner handler closure and analyze it.
 		innerBody := findInnerHandlerBody(handlerFuncDecl)
@@ -525,7 +531,7 @@ func (ra *routeAnalyzer) extractParams(body *ast.BlockStmt, filePath string, imp
 
 		methodName := sel.Sel.Name
 		switch methodName {
-		case "ShouldBindJSON":
+		case "ShouldBindJSON", "BindJSON", "ShouldBindXML", "BindXML", "ShouldBindYAML", "BindYAML":
 			if info := ra.extractBindParam(callExpr, "body", varTypes, filePath, imports); info != nil {
 				key := "body:" + info.StructType
 				if !seen[key] {
@@ -534,7 +540,7 @@ func (ra *routeAnalyzer) extractParams(body *ast.BlockStmt, filePath string, imp
 				}
 			}
 
-		case "ShouldBindQuery":
+		case "ShouldBindQuery", "BindQuery":
 			if info := ra.extractBindParam(callExpr, "query", varTypes, filePath, imports); info != nil {
 				key := "query:" + info.StructType
 				if !seen[key] {
@@ -543,9 +549,47 @@ func (ra *routeAnalyzer) extractParams(body *ast.BlockStmt, filePath string, imp
 				}
 			}
 
+		case "ShouldBindUri", "BindUri":
+			if info := ra.extractBindParam(callExpr, "uri", varTypes, filePath, imports); info != nil {
+				key := "uri:" + info.StructType
+				if !seen[key] {
+					params = append(params, *info)
+					seen[key] = true
+				}
+			}
+
+		case "ShouldBind", "Bind":
+			if info := ra.extractBindParam(callExpr, "request", varTypes, filePath, imports); info != nil {
+				key := "request:" + info.StructType
+				if !seen[key] {
+					params = append(params, *info)
+					seen[key] = true
+				}
+			}
+
 		case "Query":
 			if key := extractStringArg(callExpr, 0); key != "" {
-				info := ParamInfo{Source: "query", Key: key}
+				info := ParamInfo{Source: "query", Key: key, Type: "string"}
+				key2 := "query:" + key
+				if !seen[key2] {
+					params = append(params, info)
+					seen[key2] = true
+				}
+			}
+
+		case "GetQuery":
+			if key := extractStringArg(callExpr, 0); key != "" {
+				info := ParamInfo{Source: "query", Key: key, Type: "string"}
+				key2 := "query:" + key
+				if !seen[key2] {
+					params = append(params, info)
+					seen[key2] = true
+				}
+			}
+
+		case "QueryArray", "GetQueryArray":
+			if key := extractStringArg(callExpr, 0); key != "" {
+				info := ParamInfo{Source: "query", Key: key, Type: "[]string"}
 				key2 := "query:" + key
 				if !seen[key2] {
 					params = append(params, info)
@@ -556,7 +600,7 @@ func (ra *routeAnalyzer) extractParams(body *ast.BlockStmt, filePath string, imp
 		case "DefaultQuery":
 			if key := extractStringArg(callExpr, 0); key != "" {
 				def := extractStringArg(callExpr, 1)
-				info := ParamInfo{Source: "query", Key: key, Default: def}
+				info := ParamInfo{Source: "query", Key: key, Type: "string", Default: def}
 				key2 := "query:" + key
 				if !seen[key2] {
 					params = append(params, info)
@@ -566,7 +610,7 @@ func (ra *routeAnalyzer) extractParams(body *ast.BlockStmt, filePath string, imp
 
 		case "Param":
 			if key := extractStringArg(callExpr, 0); key != "" {
-				info := ParamInfo{Source: "uri", Key: key}
+				info := ParamInfo{Source: "uri", Key: key, Type: "string"}
 				key2 := "uri:" + key
 				if !seen[key2] {
 					params = append(params, info)
@@ -578,6 +622,39 @@ func (ra *routeAnalyzer) extractParams(body *ast.BlockStmt, filePath string, imp
 			if key := extractStringArg(callExpr, 0); key != "" {
 				info := ParamInfo{Source: "context", Key: key}
 				key2 := "context:" + key
+				if !seen[key2] {
+					params = append(params, info)
+					seen[key2] = true
+				}
+			}
+
+		case "GetHeader":
+			if key := extractStringArg(callExpr, 0); key != "" {
+				info := ParamInfo{Source: "header", Key: key, Type: "string"}
+				key2 := "header:" + key
+				if !seen[key2] {
+					params = append(params, info)
+					seen[key2] = true
+				}
+			}
+
+		case "PostForm", "GetPostForm", "DefaultPostForm":
+			if key := extractStringArg(callExpr, 0); key != "" {
+				info := ParamInfo{Source: "form", Key: key, Type: "string"}
+				if methodName == "DefaultPostForm" {
+					info.Default = extractStringArg(callExpr, 1)
+				}
+				key2 := "form:" + key
+				if !seen[key2] {
+					params = append(params, info)
+					seen[key2] = true
+				}
+			}
+
+		case "FormFile":
+			if key := extractStringArg(callExpr, 0); key != "" {
+				info := ParamInfo{Source: "file", Key: key, Type: "file"}
+				key2 := "file:" + key
 				if !seen[key2] {
 					params = append(params, info)
 					seen[key2] = true
@@ -875,6 +952,12 @@ func (ra *routeAnalyzer) resolveStructFields(fullPkgPath, typeName string) []Fie
 	if fields, ok := ra.structCache[cacheKey]; ok {
 		return fields
 	}
+	// Guard: prevent re-entering resolution for the same type (circular refs).
+	if ra.resolvingTypes[cacheKey] {
+		return nil
+	}
+	ra.resolvingTypes[cacheKey] = true
+	defer delete(ra.resolvingTypes, cacheKey)
 
 	// Determine the directory for the package.
 	pkgDir := ""
@@ -883,7 +966,7 @@ func (ra *routeAnalyzer) resolveStructFields(fullPkgPath, typeName string) []Fie
 		// We'll need to check all parsed files for the type.
 		for _, pf := range ra.parsedCache {
 			pkg := pf.Name.Name
-			if typeFields := findStructInFile(pf, typeName); typeFields != nil {
+			if typeFields := ra.findStructInFile(pf, typeName); typeFields != nil {
 				ra.structCache[cacheKey] = typeFields
 				ra.structCache[pkg+"."+typeName] = typeFields
 				return typeFields
@@ -925,7 +1008,7 @@ func (ra *routeAnalyzer) resolveStructFields(fullPkgPath, typeName string) []Fie
 		}
 		ra.parsedCache[fp] = pf
 
-		if fields := findStructInFile(pf, typeName); fields != nil {
+		if fields := ra.findStructInFile(pf, typeName); fields != nil {
 			ra.structCache[cacheKey] = fields
 			return fields
 		}
@@ -934,7 +1017,7 @@ func (ra *routeAnalyzer) resolveStructFields(fullPkgPath, typeName string) []Fie
 	return nil
 }
 
-func findStructInFile(f *ast.File, typeName string) []FieldInfo {
+func (ra *routeAnalyzer) findStructInFile(f *ast.File, typeName string) []FieldInfo {
 	for _, decl := range f.Decls {
 		gd, ok := decl.(*ast.GenDecl)
 		if !ok {
@@ -949,13 +1032,13 @@ func findStructInFile(f *ast.File, typeName string) []FieldInfo {
 			if !ok {
 				continue
 			}
-			return extractFieldsFromStruct(st)
+			return ra.extractFieldsFromStruct(st)
 		}
 	}
 	return nil
 }
 
-func extractFieldsFromStruct(st *ast.StructType) []FieldInfo {
+func (ra *routeAnalyzer) extractFieldsFromStruct(st *ast.StructType) []FieldInfo {
 	if st.Fields == nil {
 		return nil
 	}
@@ -966,23 +1049,71 @@ func extractFieldsFromStruct(st *ast.StructType) []FieldInfo {
 			continue
 		}
 		for _, name := range f.Names {
+			typeStr := exprString(f.Type)
 			fi := FieldInfo{
 				Name: name.Name,
-				Type: exprString(f.Type),
+				Type: typeStr,
 			}
 			if f.Tag != nil {
 				tagRaw := strings.Trim(f.Tag.Value, "`")
 				fi.Tag = tagRaw
-				// Check if binding:"required" exists in the tag.
 				if strings.Contains(tagRaw, `binding:"required"`) ||
 					strings.Contains(tagRaw, `binding:\"required\"`) {
 					fi.Required = true
 				}
 			}
+			// Try to resolve nested struct type — strip slice/pointer wrappers.
+			nestedType := strings.TrimLeft(typeStr, "*[]")
+			if strings.HasPrefix(typeStr, "[]") {
+				nestedType = strings.TrimPrefix(typeStr, "[]")
+			}
+			nestedType = strings.TrimLeft(nestedType, "*")
+
+			// Skip simple/built-in types.
+			if isBuiltinType(nestedType) {
+				fields = append(fields, fi)
+				continue
+			}
+
+			if childFields := ra.resolveNestedTypeName(nestedType); childFields != nil {
+				fi.Fields = childFields
+			}
 			fields = append(fields, fi)
 		}
 	}
 	return fields
+}
+
+// resolveNestedTypeName resolves a qualified type name like "params.SyncDiskTagItem"
+// by trying all available import maps from parsed files.
+func (ra *routeAnalyzer) resolveNestedTypeName(typeName string) []FieldInfo {
+	if !strings.Contains(typeName, ".") {
+		return ra.resolveStructFields("", typeName)
+	}
+	parts := strings.SplitN(typeName, ".", 2)
+	pkgAlias := parts[0]
+	structName := parts[1]
+
+	// Search through all parsed files' import maps.
+	for _, pf := range ra.parsedCache {
+		imports := buildImportMap(pf)
+		if fullPath, ok := imports[pkgAlias]; ok {
+			if fields := ra.resolveStructFields(fullPath, structName); fields != nil {
+				return fields
+			}
+		}
+		// Also try same-package resolution from this file.
+		if pf.Name.Name == pkgAlias {
+			if fields := ra.resolveStructFields("", structName); fields != nil {
+				return fields
+			}
+		}
+	}
+	// Also try directly from already cached types.
+	if fields := ra.resolveStructFields("", structName); fields != nil {
+		return fields
+	}
+	return nil
 }
 
 // ─── Utility helpers ─────────────────────────────────────────────────────────
@@ -991,6 +1122,45 @@ func extractFieldsFromStruct(st *ast.StructType) []FieldInfo {
 func isHTTPMethod(s string) bool {
 	switch s {
 	case "GET", "POST", "PUT", "DELETE", "PATCH", "HEAD", "OPTIONS":
+		return true
+	}
+	return false
+}
+
+// routeMethodAndPathIndex recognizes Gin's verb helpers as well as the
+// generic Any and Handle registrations. Handle keeps a literal method when it
+// is statically available; otherwise it is reported as HANDLE.
+func routeMethodAndPathIndex(name string, call *ast.CallExpr) (string, int) {
+	if isHTTPMethod(name) {
+		return name, 0
+	}
+	switch name {
+	case "Any":
+		return "ANY", 0
+	case "Handle":
+		if method := extractStringArg(call, 0); method != "" {
+			return strings.ToUpper(method), 1
+		}
+		return "HANDLE", 1
+	}
+	return "", 0
+}
+
+func isEmptyStringArg(ce *ast.CallExpr, idx int) bool {
+	if idx >= len(ce.Args) {
+		return false
+	}
+	bl, ok := ce.Args[idx].(*ast.BasicLit)
+	return ok && bl.Kind == token.STRING && strings.Trim(bl.Value, "\"") == ""
+}
+
+// isBuiltinType returns true for Go built-in types that are never structs.
+func isBuiltinType(t string) bool {
+	switch t {
+	case "string", "bool", "int", "int8", "int16", "int32", "int64",
+		"uint", "uint8", "uint16", "uint32", "uint64", "uintptr",
+		"float32", "float64", "complex64", "complex128",
+		"byte", "rune", "error", "any":
 		return true
 	}
 	return false

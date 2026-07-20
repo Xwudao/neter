@@ -17,13 +17,14 @@ var routeInfoCmd = &cobra.Command{
 	Short: "analyze and export route information from Gin projects",
 	Long: `Scans a Go project directory for Gin route registrations and extracts:
 - HTTP method and path
-- Handler function name
-- Route group (public, auth, admin)
-- Parameters (body structs, query params, URI params, context values)
+- Handler function name, registration location, and route middleware
+- Route group (public, auth, admin), including nested Gin groups
+- Parameters (body/query/URI bindings, headers, forms, files, and context values)
 - Return types
 
 Output formats: json, md, curl (terminal-friendly with curl examples)
 Filter with -f to match handler name or full path.`,
+	Args: cobra.NoArgs,
 	Run: func(cmd *cobra.Command, args []string) {
 		utils.CheckErrWithStatus(runRouteInfo(cmd))
 	},
@@ -32,6 +33,7 @@ Filter with -f to match handler name or full path.`,
 var routeInfoExportCmd = &cobra.Command{
 	Use:   "export",
 	Short: "export route info to a file",
+	Args:  cobra.NoArgs,
 	Run: func(cmd *cobra.Command, args []string) {
 		utils.CheckErrWithStatus(runRouteInfoExport(cmd))
 	},
@@ -81,6 +83,7 @@ func getRouteInfoConfig(cmd *cobra.Command) (*routeInfoConfig, error) {
 			format = "curl"
 		}
 	}
+	format = strings.ToLower(format)
 
 	return &routeInfoConfig{
 		Dir:    dir,
@@ -108,28 +111,10 @@ func runRouteInfo(cmd *cobra.Command) error {
 	}
 
 	if cfg.Output != "" {
-		// Write to file
-		switch cfg.Format {
-		case "json":
-			if err := route_info.WriteJSON(projectRoutes, cfg.Output); err != nil {
-				return err
-			}
-			fmt.Printf("route info written to %s (%d routes)\n", cfg.Output, len(projectRoutes.Routes))
-		case "md", "markdown":
-			if err := route_info.WriteMarkdown(projectRoutes, cfg.Output); err != nil {
-				return err
-			}
-			fmt.Printf("route info written to %s (%d routes)\n", cfg.Output, len(projectRoutes.Routes))
-		case "curl":
-			if err := route_info.WriteTerminal(projectRoutes, cfg.Output, &route_info.TerminalConfig{
-				ServerURL: cfg.Server,
-			}); err != nil {
-				return err
-			}
-			fmt.Printf("route info written to %s (%d routes)\n", cfg.Output, len(projectRoutes.Routes))
-		default:
-			return fmt.Errorf("unsupported format: %s (use json, md, or curl)", cfg.Format)
+		if err := writeRouteInfo(projectRoutes, cfg); err != nil {
+			return err
 		}
+		fmt.Printf("route info written to %s (%d routes)\n", cfg.Output, len(projectRoutes.Routes))
 	} else {
 		// Print to stdout
 		switch cfg.Format {
@@ -170,29 +155,29 @@ func runRouteInfoExport(cmd *cobra.Command) error {
 		projectRoutes = route_info.ApplyFilter(projectRoutes, &route_info.FilterOption{Keyword: cfg.Filter})
 	}
 
-	switch cfg.Format {
-	case "json":
-		if err := route_info.WriteJSON(projectRoutes, cfg.Output); err != nil {
-			return err
-		}
-		fmt.Printf("route info written to %s (%d routes)\n", cfg.Output, len(projectRoutes.Routes))
-	case "md", "markdown":
-		if err := route_info.WriteMarkdown(projectRoutes, cfg.Output); err != nil {
-			return err
-		}
-		fmt.Printf("route info written to %s (%d routes)\n", cfg.Output, len(projectRoutes.Routes))
-	case "curl":
-		if err := route_info.WriteTerminal(projectRoutes, cfg.Output, &route_info.TerminalConfig{
-			ServerURL: cfg.Server,
-		}); err != nil {
-			return err
-		}
-		fmt.Printf("route info written to %s (%d routes)\n", cfg.Output, len(projectRoutes.Routes))
-	default:
-		return fmt.Errorf("unsupported format: %s", cfg.Format)
+	if err := writeRouteInfo(projectRoutes, cfg); err != nil {
+		return err
 	}
+	fmt.Printf("route info written to %s (%d routes)\n", cfg.Output, len(projectRoutes.Routes))
 
 	return nil
+}
+
+// writeRouteInfo writes routes in the requested format.  Keeping this in one
+// place ensures `route-info` and `route-info export` always behave identically.
+func writeRouteInfo(projectRoutes *route_info.ProjectRoutes, cfg *routeInfoConfig) error {
+	switch cfg.Format {
+	case "json":
+		return route_info.WriteJSON(projectRoutes, cfg.Output)
+	case "md", "markdown":
+		return route_info.WriteMarkdown(projectRoutes, cfg.Output)
+	case "curl":
+		return route_info.WriteTerminal(projectRoutes, cfg.Output, &route_info.TerminalConfig{
+			ServerURL: cfg.Server,
+		})
+	default:
+		return fmt.Errorf("unsupported format: %s (use json, md, or curl)", cfg.Format)
+	}
 }
 
 // detectServerFromConfig reads the project's config.yml and extracts

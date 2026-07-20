@@ -72,7 +72,14 @@ func generateMarkdown(routes *ProjectRoutes) string {
 		b.WriteString(fmt.Sprintf("## %s **%s**\n\n", r.Method, r.FullPath))
 
 		// Meta info on one line
-		b.WriteString(fmt.Sprintf("> `%s` · %s · %s\n\n", r.Handler, r.Group, r.File))
+		source := r.File
+		if r.Line > 0 {
+			source = fmt.Sprintf("%s:%d", r.File, r.Line)
+		}
+		b.WriteString(fmt.Sprintf("> `%s` · %s · %s\n\n", r.Handler, r.Group, source))
+		if len(r.Middlewares) > 0 {
+			b.WriteString(fmt.Sprintf("**Route middleware:** `%s`\n\n", strings.Join(r.Middlewares, "`, `")))
+		}
 
 		// ── Request ──
 		b.WriteString("### Request\n\n")
@@ -89,6 +96,7 @@ func generateMarkdown(routes *ProjectRoutes) string {
 			var queryParams []ParamInfo
 			var uriParams []ParamInfo
 			var ctxParams []ParamInfo
+			var extraParams []ParamInfo
 
 			for _, p := range r.Params {
 				switch p.Source {
@@ -104,6 +112,8 @@ func generateMarkdown(routes *ProjectRoutes) string {
 				case "context":
 					hasCtx = true
 					ctxParams = append(ctxParams, p)
+				default:
+					extraParams = append(extraParams, p)
 				}
 			}
 
@@ -113,7 +123,17 @@ func generateMarkdown(routes *ProjectRoutes) string {
 				b.WriteString("| Field | Type |\n")
 				b.WriteString("|-------|------|\n")
 				for _, p := range uriParams {
-					b.WriteString(fmt.Sprintf("| `%s` | `string` |\n", p.Key))
+					if p.StructType != "" && len(p.Fields) > 0 {
+						for _, f := range p.Fields {
+							b.WriteString(fmt.Sprintf("| `%s` | `%s` |\n", fieldName(f, "uri"), f.Type))
+						}
+						continue
+					}
+					typeName := p.Type
+					if typeName == "" {
+						typeName = "string"
+					}
+					b.WriteString(fmt.Sprintf("| `%s` | `%s` |\n", p.Key, typeName))
 				}
 				b.WriteString("\n")
 			}
@@ -133,14 +153,18 @@ func generateMarkdown(routes *ProjectRoutes) string {
 								if f.Required {
 									req = "✓"
 								}
-								b.WriteString(fmt.Sprintf("| `%s` | `%s` | %s | `%s` |\n", f.Name, f.Type, req, f.Tag))
+								b.WriteString(fmt.Sprintf("| `%s` | `%s` | %s | `%s` |\n", fieldName(f, "query"), f.Type, req, f.Tag))
 							}
 							b.WriteString("\n")
 						} else {
 							// Individual simple keys alongside struct
 							b.WriteString("| Field | Type | Default |\n")
 							b.WriteString("|-------|------|---------|\n")
-							b.WriteString(fmt.Sprintf("| `%s` | `string` | `%s` |\n", p.Key, strDefault(p.Default)))
+							typeName := p.Type
+							if typeName == "" {
+								typeName = "string"
+							}
+							b.WriteString(fmt.Sprintf("| `%s` | `%s` | `%s` |\n", p.Key, typeName, strDefault(p.Default)))
 						}
 					}
 					b.WriteString("\n")
@@ -148,7 +172,11 @@ func generateMarkdown(routes *ProjectRoutes) string {
 					b.WriteString("| Field | Type | Default |\n")
 					b.WriteString("|-------|------|---------|\n")
 					for _, p := range queryParams {
-						b.WriteString(fmt.Sprintf("| `%s` | `string` | `%s` |\n", p.Key, strDefault(p.Default)))
+						typeName := p.Type
+						if typeName == "" {
+							typeName = "string"
+						}
+						b.WriteString(fmt.Sprintf("| `%s` | `%s` | `%s` |\n", p.Key, typeName, strDefault(p.Default)))
 					}
 					b.WriteString("\n")
 				}
@@ -170,7 +198,7 @@ func generateMarkdown(routes *ProjectRoutes) string {
 							if f.Required {
 								req = "✓"
 							}
-							b.WriteString(fmt.Sprintf("| `%s` | `%s` | %s | `%s` |\n", f.Name, f.Type, req, f.Tag))
+							b.WriteString(fmt.Sprintf("| `%s` | `%s` | %s | `%s` |\n", fieldName(f, "query"), f.Type, req, f.Tag))
 						}
 					} else if p.StructType != "" {
 						b.WriteString("_(struct fields not resolved)_\n\n")
@@ -186,6 +214,24 @@ func generateMarkdown(routes *ProjectRoutes) string {
 				b.WriteString("|-----|------|\n")
 				for _, p := range ctxParams {
 					b.WriteString(fmt.Sprintf("| `%s` | `-` |\n", p.Key))
+				}
+				b.WriteString("\n")
+			}
+
+			if len(extraParams) > 0 {
+				b.WriteString("**Other inputs**\n\n")
+				b.WriteString("| Source | Field | Type | Default |\n")
+				b.WriteString("|--------|-------|------|---------|\n")
+				for _, p := range extraParams {
+					if p.StructType != "" {
+						b.WriteString(fmt.Sprintf("| `%s` | `%s` | `%s` | |\n", p.Source, p.StructType, p.StructType))
+						continue
+					}
+					typeName := p.Type
+					if typeName == "" {
+						typeName = "string"
+					}
+					b.WriteString(fmt.Sprintf("| `%s` | `%s` | `%s` | `%s` |\n", p.Source, p.Key, typeName, strDefault(p.Default)))
 				}
 				b.WriteString("\n")
 			}
@@ -228,7 +274,7 @@ func generateMarkdown(routes *ProjectRoutes) string {
 						if f.Required {
 							req = "✓"
 						}
-						b.WriteString(fmt.Sprintf("| `%s` | `%s` | %s | `%s` |\n", f.Name, f.Type, req, f.Tag))
+						b.WriteString(fmt.Sprintf("| `%s` | `%s` | %s | `%s` |\n", fieldName(f, "body"), f.Type, req, f.Tag))
 					}
 					b.WriteString("\n")
 				}
@@ -322,12 +368,26 @@ func generateTerminalRoute(r RouteInfo, server string) string {
 	// Build full URL with URI params filled
 	fullURL := server + r.FullPath
 	for _, p := range uriParams {
+		if p.StructType != "" {
+			for _, f := range p.Fields {
+				key := fieldName(f, "uri")
+				fullURL = strings.ReplaceAll(fullURL, ":"+key, "{"+key+"}")
+			}
+			continue
+		}
 		fullURL = strings.ReplaceAll(fullURL, ":"+p.Key, "{"+p.Key+"}")
 	}
 
 	// Build query string
 	var queryParts []string
 	for _, p := range queryParams {
+		if p.StructType != "" {
+			for _, f := range p.Fields {
+				key := fieldName(f, "query")
+				queryParts = append(queryParts, key+"={"+key+"}")
+			}
+			continue
+		}
 		if p.Key != "" {
 			val := p.Default
 			if val == "" {
@@ -336,14 +396,14 @@ func generateTerminalRoute(r RouteInfo, server string) string {
 			queryParts = append(queryParts, p.Key+"="+val)
 		}
 	}
+	if len(queryParts) > 0 {
+		fullURL += "?" + strings.Join(queryParts, "&")
+	}
 
 	// Build curl
 	b.WriteString("```sh\n")
 
-	if r.Method == "GET" && len(queryParts) > 0 {
-		// GET with query: curl 'url?key=val&key2=val2'
-		b.WriteString(fmt.Sprintf("curl '%s?%s'\n", fullURL, strings.Join(queryParts, "&")))
-	} else if r.Method == "GET" {
+	if r.Method == "GET" {
 		b.WriteString(fmt.Sprintf("curl '%s'\n", fullURL))
 	} else {
 		// POST etc.
@@ -359,10 +419,6 @@ func generateTerminalRoute(r RouteInfo, server string) string {
 			if jsonStr != "" {
 				b.WriteString(fmt.Sprintf(" \\\n  -d '%s'", jsonStr))
 			}
-		}
-
-		if !hasBody && len(queryParts) > 0 {
-			b.WriteString(fmt.Sprintf(" \\\n  -d '%s'", strings.Join(queryParts, "&")))
 		}
 
 		b.WriteString("\n")
@@ -393,7 +449,7 @@ func generateTerminalRoute(r RouteInfo, server string) string {
 						if f.Required {
 							req = "✓"
 						}
-						b.WriteString(fmt.Sprintf("| %s | %s | %s |\n", f.Name, f.Type, req))
+						b.WriteString(fmt.Sprintf("| %s | %s | %s |\n", fieldName(f, "query"), f.Type, req))
 					}
 				} else if p.Key != "" {
 					b.WriteString("| Field | Type | Default |\n")
@@ -443,7 +499,7 @@ func generateTerminalRoute(r RouteInfo, server string) string {
 					comma = ""
 				}
 				example := jsonExampleValue(f.Type)
-				b.WriteString(fmt.Sprintf("    \"%s\": %s%s\n", f.Name, example, comma))
+				b.WriteString(fmt.Sprintf("    \"%s\": %s%s\n", fieldName(f, "body"), example, comma))
 			}
 			b.WriteString("  }\n")
 			b.WriteString("}\n")
@@ -461,106 +517,115 @@ func generateTerminalRoute(r RouteInfo, server string) string {
 
 // buildBodyJSONExample creates a compact JSON example from body params.
 func buildBodyJSONExample(bodyParams []ParamInfo) string {
-	type field struct {
-		name string
-		val  string
-	}
-	var fields []field
-
-	for _, p := range bodyParams {
-		if len(p.Fields) > 0 {
-			for _, f := range p.Fields {
-				val := jsonExampleValue(f.Type)
-				fields = append(fields, field{name: jsonTagName(f.Tag, f.Name), val: val})
-			}
-		} else if p.StructType != "" {
-			fields = append(fields, field{name: p.StructType, val: "..."})
-		}
-	}
-
-	if len(fields) == 0 {
-		return ""
-	}
-
-	var parts []string
-	for _, f := range fields {
-		if f.val == "string" {
-			parts = append(parts, fmt.Sprintf(`"%s":"%s"`, f.name, f.name))
-		} else {
-			parts = append(parts, fmt.Sprintf(`"%s":%s`, f.name, f.val))
-		}
-	}
-	return "{" + strings.Join(parts, ",") + "}"
+	return buildBodyJSONSchema(bodyParams)
 }
 
-// buildBodyJSONSchema creates a documented JSON schema from body params.
+// buildBodyJSONSchema creates a valid, copyable JSON example from body params.
 func buildBodyJSONSchema(bodyParams []ParamInfo) string {
-	type field struct {
-		name     string
-		typ      string
-		required bool
+	if len(bodyParams) == 0 {
+		return "{}\n"
 	}
-	var fields []field
 
+	fields := make([]FieldInfo, 0)
 	for _, p := range bodyParams {
 		if len(p.Fields) > 0 {
-			for _, f := range p.Fields {
-				fields = append(fields, field{
-					name:     jsonTagName(f.Tag, f.Name),
-					typ:      f.Type,
-					required: f.Required,
-				})
-			}
+			fields = append(fields, p.Fields...)
 		} else if p.StructType != "" {
-			fields = append(fields, field{name: "...", typ: p.StructType, required: false})
+			fields = append(fields, FieldInfo{Name: p.StructType, Type: "string"})
 		}
 	}
-
 	if len(fields) == 0 {
 		return "{}\n"
 	}
 
 	var b strings.Builder
-	b.WriteString("{\n")
-	for i, f := range fields {
-		comma := ","
-		if i == len(fields)-1 {
-			comma = ""
-		}
-		req := ""
-		if f.required {
-			req = " (required)"
-		}
-		b.WriteString(fmt.Sprintf("  \"%s\": \"%s\"%s%s\n", f.name, f.typ, req, comma))
-	}
-	b.WriteString("}\n")
+	writeJSONObject(&b, fields, 0)
+	b.WriteByte('\n')
 	return b.String()
+}
+
+func writeJSONObject(b *strings.Builder, fields []FieldInfo, indent int) {
+	pad := strings.Repeat("  ", indent)
+	b.WriteString("{")
+	for i, f := range fields {
+		b.WriteByte('\n')
+		writeJSONField(b, f, indent+1)
+		if i < len(fields)-1 {
+			b.WriteByte(',')
+		}
+	}
+	b.WriteByte('\n')
+	b.WriteString(pad)
+	b.WriteByte('}')
+}
+
+// writeJSONField writes a JSON field with recursively expanded nested structs.
+func writeJSONField(b *strings.Builder, f FieldInfo, indent int) {
+	pad := strings.Repeat("  ", indent)
+	jsonName := jsonTagName(f.Tag, f.Name)
+	b.WriteString(fmt.Sprintf("%s%q: ", pad, jsonName))
+	if len(f.Fields) > 0 {
+		if strings.HasPrefix(strings.TrimLeft(f.Type, "*"), "[]") {
+			b.WriteByte('[')
+			writeJSONObject(b, f.Fields, indent+1)
+			b.WriteByte(']')
+			return
+		}
+		writeJSONObject(b, f.Fields, indent)
+	} else {
+		value := jsonExampleValue(f.Type)
+		if value == "string" {
+			b.WriteString(fmt.Sprintf("%q", jsonName))
+			return
+		}
+		b.WriteString(value)
+	}
 }
 
 // jsonTagName extracts the JSON field name from a struct tag.
 func jsonTagName(tag string, fallback string) string {
+	return tagName(tag, "json", fallback)
+}
+
+// fieldName returns the name Gin reads for a field in the specified input
+// source. Query binding uses form tags; URI binding uses uri tags; JSON bodies
+// use json tags. It falls back through the other common tags for incomplete
+// request structs, then to the Go field name.
+func fieldName(f FieldInfo, source string) string {
+	keys := []string{"json", "form", "uri"}
+	switch source {
+	case "query", "form":
+		keys = []string{"form", "json", "uri"}
+	case "uri":
+		keys = []string{"uri", "form", "json"}
+	}
+	for _, key := range keys {
+		if name := tagName(f.Tag, key, ""); name != "" {
+			return name
+		}
+	}
+	return f.Name
+}
+
+func tagName(tag, key, fallback string) string {
 	if tag == "" {
 		return fallback
 	}
-	// Look for json:"..."
-	idx := strings.Index(tag, `json:"`)
+	needle := key + `:"`
+	idx := strings.Index(tag, needle)
 	if idx < 0 {
 		return fallback
 	}
-	rest := tag[idx+6:]
+	rest := tag[idx+len(needle):]
 	end := strings.Index(rest, `"`)
 	if end < 0 {
 		return fallback
 	}
 	name := rest[:end]
-	// Strip omitempty etc.
 	if comma := strings.Index(name, ","); comma >= 0 {
 		name = name[:comma]
 	}
-	if name == "-" {
-		return fallback
-	}
-	if name == "" {
+	if name == "-" || name == "" {
 		return fallback
 	}
 	return name
