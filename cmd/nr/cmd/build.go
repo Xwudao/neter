@@ -42,6 +42,7 @@ var buildCmd = &cobra.Command{
 		cmdStr, _ := cmd.Flags().GetString("cmd")
 		html, _ := cmd.Flags().GetBool("html")
 		prod, _ := cmd.Flags().GetBool("prod")
+		deploy, _ := cmd.Flags().GetBool("deploy")
 
 		// --prod implies --trim and --web
 		if prod {
@@ -65,6 +66,10 @@ var buildCmd = &cobra.Command{
 			if !cmd.Flags().Changed("arch") {
 				arch = runtime.GOARCH
 			}
+		}
+		if deploy && (!linux || mac || win) {
+			log.Fatalf("[deploy] --deploy requires a linux-only build target")
+			return
 		}
 
 		// Initialize hook manager
@@ -105,6 +110,18 @@ var buildCmd = &cobra.Command{
 			return
 		}
 		logCommandStep("build", "app=%s arch=%s", appRoot, arch)
+
+		var neterCfg *core.NeterConfig
+		if trim || deploy {
+			neterCfg, err = core.LoadNeterConfig()
+			if err != nil {
+				if deploy {
+					log.Fatalf("[deploy] load neter.yml failed: %v", err)
+					return
+				}
+				logCommandWarn("neter", "%v", err)
+			}
+		}
 
 		if web {
 			checkErr(buildWebAssets(pm))
@@ -157,13 +174,12 @@ var buildCmd = &cobra.Command{
 					buildArgs = append(buildArgs, `-gcflags=all=-N -l`)
 				} else if trim {
 					// Append ldflags from neter.yml
-					neterCfg, neterErr := core.LoadNeterConfig()
-					if neterErr != nil {
-						logCommandWarn("neter", "%v", neterErr)
-					} else if neterLdflags := neterCfg.BuildLdflags(); neterLdflags != "" {
-						ldflags.WriteString(" ")
-						ldflags.WriteString(neterLdflags)
-						logCommandSuccess("neter", "injected ldflags from neter.yml")
+					if neterCfg != nil {
+						if neterLdflags := neterCfg.BuildLdflags(); neterLdflags != "" {
+							ldflags.WriteString(" ")
+							ldflags.WriteString(neterLdflags)
+							logCommandSuccess("neter", "injected ldflags from neter.yml")
+						}
 					}
 					buildArgs = append(buildArgs, "-trimpath", ldflags.String())
 				}
@@ -185,6 +201,19 @@ var buildCmd = &cobra.Command{
 				}
 				logCommandOutput("build", "go build output", res)
 				logCommandSuccess("build", "built %s", c.Name)
+
+				if deploy && c.Type == "linux" {
+					if neterCfg == nil {
+						log.Fatalf("[deploy] neter.yml is required for deployment")
+						return
+					}
+					logCommandStep("deploy", "uploading %s to %s", c.Name, neterCfg.Deploy.Alias)
+					if err := core.DeployBinary(neterCfg.Deploy, c.Name); err != nil {
+						log.Fatalf("[deploy] %v", err)
+						return
+					}
+					logCommandSuccess("deploy", "remote deploy script completed")
+				}
 
 				if dlv {
 					logCommandStep("build", "debug command: dlv --listen=:2345 --headless=true --api-version=2 --accept-multiclient exec ./%s %s", c.Name, cmdStr)
@@ -250,4 +279,5 @@ func init() {
 	buildCmd.Flags().Bool("html", false, "build with web / template")
 	// buildCmd.Flags().Bool("prod", false, "production build: enables --trim --web and injects ldflags from neter.yml")
 	buildCmd.Flags().BoolP("prod", "p", false, "production build: enables --trim --web and injects ldflags from neter.yml")
+	buildCmd.Flags().BoolP("deploy", "d", false, "upload the linux binary and run the remote deploy script from neter.yml")
 }

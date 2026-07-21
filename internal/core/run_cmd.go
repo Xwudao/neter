@@ -77,6 +77,14 @@ func RunAsync(name string, args ...string) error {
 	}
 }
 
+func RunStreamWithDir(name string, dir string, env []string, args ...string) error {
+	cmd := newCommand(name, dir, env, args...)
+	cmd.Stdin = os.Stdin
+	cmd.Stdout = os.Stdout
+	cmd.Stderr = os.Stderr
+	return cmd.Run()
+}
+
 func newCommand(name string, dir string, env []string, args ...string) *exec.Cmd {
 	cmd := exec.Command(name, args...)
 	if dir != "" {

@@ -24,6 +24,10 @@ func TestExampleNeterConfigYAMLContainsAllSupportedSections(t *testing.T) {
 		"items:",
 		`event: "on_start"`,
 		`action: "scripts/pre_build.sh"`,
+		"deploy:",
+		`alias: "prod-app"`,
+		`remote_upload_dir: "/srv/myapp"`,
+		`remote_script: "/srv/myapp/deploy.sh"`,
 	}
 
 	for _, want := range wants {

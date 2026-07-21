@@ -52,11 +52,18 @@ type HookDependsConfig struct {
 	Flags []string `yaml:"flags"`
 }
 
+type DeployConfig struct {
+	Alias           string `yaml:"alias"`
+	RemoteUploadDir string `yaml:"remote_upload_dir"`
+	RemoteScript    string `yaml:"remote_script"`
+}
+
 // NeterConfig represents the neter.yml project build configuration.
 type NeterConfig struct {
-	Ldflags []LdflagVar `yaml:"ldflags"`
-	Dev     DevConfig   `yaml:"dev"`
-	Hooks   HooksConfig `yaml:"hooks"`
+	Ldflags []LdflagVar  `yaml:"ldflags"`
+	Dev     DevConfig    `yaml:"dev"`
+	Hooks   HooksConfig  `yaml:"hooks"`
+	Deploy  DeployConfig `yaml:"deploy"`
 }
 
 // LoadNeterConfig reads and parses the neter.yml file from the project root.
@@ -182,6 +189,11 @@ hooks:
     - event: "on_start"
       action: "scripts/deploy.sh"
       platforms: ["linux", "macos"]
+
+deploy:
+  alias: "prod-app"
+  remote_upload_dir: "/srv/myapp"
+  remote_script: "/srv/myapp/deploy.sh"
 `
 }
 

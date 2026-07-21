@@ -44,3 +44,52 @@ func TestEffectiveDevConfigOverrides(t *testing.T) {
 		t.Fatalf("unexpected frontend cmd: %q", cfg.Frontend.Cmd)
 	}
 }
+
+func TestDeployConfigValidate(t *testing.T) {
+	cfg := DeployConfig{
+		Alias:           "prod-app",
+		RemoteUploadDir: "/srv/myapp",
+		RemoteScript:    "/srv/myapp/deploy.sh",
+	}
+
+	if err := cfg.Validate(); err != nil {
+		t.Fatalf("Validate() error = %v", err)
+	}
+}
+
+func TestDeployConfigValidateRequiresFields(t *testing.T) {
+	testCases := []struct {
+		name string
+		cfg  DeployConfig
+	}{
+		{
+			name: "missing alias",
+			cfg: DeployConfig{
+				RemoteUploadDir: "/srv/myapp",
+				RemoteScript:    "/srv/myapp/deploy.sh",
+			},
+		},
+		{
+			name: "missing remote upload dir",
+			cfg: DeployConfig{
+				Alias:        "prod-app",
+				RemoteScript: "/srv/myapp/deploy.sh",
+			},
+		},
+		{
+			name: "missing remote script",
+			cfg: DeployConfig{
+				Alias:           "prod-app",
+				RemoteUploadDir: "/srv/myapp",
+			},
+		},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			if err := tc.cfg.Validate(); err == nil {
+				t.Fatalf("Validate() error = nil, want error")
+			}
+		})
+	}
+}
