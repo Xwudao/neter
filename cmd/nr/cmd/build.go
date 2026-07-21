@@ -124,7 +124,10 @@ var buildCmd = &cobra.Command{
 		}
 
 		if web {
+			webStart := time.Now()
+			logCommandPhaseStart("web", "build web", webStart)
 			checkErr(buildWebAssets(pm))
+			logCommandPhaseDone("web", "build web", webStart, time.Now())
 		}
 
 		var buildPath = fmt.Sprintf("./%s/", normalizeCommandPath(appRoot))
@@ -158,6 +161,8 @@ var buildCmd = &cobra.Command{
 			logCommandWarn("hook", "%v", err)
 		}
 
+		binaryStart := time.Now()
+		logCommandPhaseStart("build", "build binary", binaryStart)
 		for _, c := range Config {
 			if c.Build {
 				buildAppName = append(buildAppName, c.Name)
@@ -207,12 +212,15 @@ var buildCmd = &cobra.Command{
 						log.Fatalf("[deploy] neter.yml is required for deployment")
 						return
 					}
+					deployStart := time.Now()
+					logCommandPhaseStart("deploy", "deploy", deployStart)
 					logCommandStep("deploy", "uploading %s to %s", c.Name, neterCfg.Deploy.Alias)
 					if err := core.DeployBinary(neterCfg.Deploy, c.Name); err != nil {
 						log.Fatalf("[deploy] %v", err)
 						return
 					}
 					logCommandSuccess("deploy", "remote deploy script completed")
+					logCommandPhaseDone("deploy", "deploy", deployStart, time.Now())
 				}
 
 				if dlv {
@@ -230,6 +238,7 @@ var buildCmd = &cobra.Command{
 				}
 			}
 		}
+		logCommandPhaseDone("build", "build binary", binaryStart, time.Now())
 
 		if html {
 			logCommandStep("build", "packing web template archive")
