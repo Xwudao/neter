@@ -32,16 +32,16 @@ func New{{.StructRouteName}}(g *gin.Engine, log *zap.SugaredLogger, conf *koanf.
 	return r
 }
 
-func (r *{{.StructRouteName}}) Reg() {
-	// r.g.GET("/{{.PackageName}}/{{.ToSnake .Name}}", core.WrapData(r.{{.ToLowerCamel .Name}}()))
+func (r *{{.StructRouteName}}) {{if .UseRouteRegistry}}Register{{else}}Reg{{end}}() {
+	// r.g.GET("/{{.PackageName}}/{{.ToSnake .Name}}", core.NoInput(r.{{.ToLowerCamel .Name}}))
 
 	group := r.g.Group("/{{.PackageName}}/{{.ToSnake .Name}}")
 	{
-		group.GET("", core.WrapData(r.{{.ToLowerCamel .Name}}()))
+		group.GET("", core.NoInput(r.{{.ToLowerCamel .Name}}))
 	}
 	authGroup := r.g.Group("/auth/{{.PackageName}}/{{.ToSnake .Name}}").Use(mdw.MustLoginMiddleware())
 	{
-		// authGroup.GET("/auth", core.WrapData(r.{{.ToLowerCamel .Name}}()))
+		// authGroup.GET("/auth", core.NoInput(r.{{.ToLowerCamel .Name}}))
 		_ = authGroup
 	}
 	adminGroup := r.g.Group("/admin/{{.PackageName}}/{{.ToSnake .Name}}").Use(mdw.MustWithRoleMiddleware(user.RoleAdmin))
@@ -51,11 +51,6 @@ func (r *{{.StructRouteName}}) Reg() {
 }
 
 
-func (r *{{.StructRouteName}}) {{.ToLowerCamel .Name}}() core.WrappedHandlerFunc {
-	return func(c *gin.Context) (any, *core.RtnStatus) {
-//var (
-//    ctx = c.Request.Context()
-//)
-		return "hello", nil
-	}
+func (r *{{.StructRouteName}}) {{.ToLowerCamel .Name}}(c *gin.Context) (string, *core.RtnStatus) {
+	return "hello", nil
 }

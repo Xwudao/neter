@@ -150,7 +150,7 @@ func (ra *routeAnalyzer) analyzeFile(filePath string) error {
 		methods[fd.Name.Name] = fd
 	}
 
-	// For each route struct, analyze its Reg() method.
+	// For each route struct, analyze its Register() or legacy Reg() method.
 	for _, structName := range routeStructs {
 		regMethod := findRegMethod(structName, methods)
 		if regMethod == nil {
@@ -165,14 +165,13 @@ func (ra *routeAnalyzer) analyzeFile(filePath string) error {
 // ─── Find Reg() method for a given route struct ─────────────────────────────
 
 func findRegMethod(structName string, methods map[string]*ast.FuncDecl) *ast.FuncDecl {
-	reg, ok := methods["Reg"]
-	if !ok {
-		return nil
+	for _, name := range []string{"Register", "Reg"} {
+		reg, ok := methods[name]
+		if ok && isMethodOfStruct(reg, structName) {
+			return reg
+		}
 	}
-	if !isMethodOfStruct(reg, structName) {
-		return nil
-	}
-	return reg
+	return nil
 }
 
 func isMethodOfStruct(fd *ast.FuncDecl, structName string) bool {
@@ -400,6 +399,8 @@ func (ra *routeAnalyzer) extractRouteRegistration(
 			// Build varTypes and pass to extractReturns for field resolution
 			varTypes := ra.buildVarTypeMap(innerBody, filePath, imports)
 			info.Returns = ra.extractReturns(innerBody, varTypes, filePath, imports)
+		} else {
+			info.Params, info.Returns = ra.extractTypedHandlerContract(handlerFuncDecl, filePath, imports, typedRequestSource(callExpr.Args[handlerIndex]))
 		}
 	}
 
@@ -438,7 +439,8 @@ func findHandlerMethod(structName, handlerName string, methods map[string]*ast.F
 	return fd
 }
 
-// extractHandlerName extracts the handler function name from a WrapData call.
+// extractHandlerName extracts a handler from legacy WrapData calls and the
+// typed JSON/Request/NoInput wrappers used by current templates.
 // e.g. core.WrapData(r.handlerName()) → "handlerName", []
 // e.g. core.WrapData(r.handlerName(true)) → "handlerName", [true]
 func extractHandlerName(expr ast.Expr) (string, []ast.Expr) {
@@ -450,8 +452,7 @@ func extractHandlerName(expr ast.Expr) (string, []ast.Expr) {
 	if !ok {
 		return "", nil
 	}
-	// Check for core.WrapData
-	if sel.Sel.Name != "WrapData" {
+	if sel.Sel.Name != "WrapData" && sel.Sel.Name != "JSON" && sel.Sel.Name != "Request" && sel.Sel.Name != "NoInput" {
 		return "", nil
 	}
 	pkgIdent, ok := sel.X.(*ast.Ident)
@@ -464,7 +465,14 @@ func extractHandlerName(expr ast.Expr) (string, []ast.Expr) {
 		return "", nil
 	}
 
-	// The argument should be r.handlerName(...)
+	// Typed wrappers take r.handlerName; legacy WrapData takes r.handlerName().
+	if handlerSel, ok := call.Args[0].(*ast.SelectorExpr); ok {
+		if recvIdent, ok := handlerSel.X.(*ast.Ident); ok && recvIdent.Name == "r" {
+			return handlerSel.Sel.Name, nil
+		}
+	}
+
+	// The legacy argument should be r.handlerName(...)
 	handlerCall, ok := call.Args[0].(*ast.CallExpr)
 	if !ok {
 		return "", nil
@@ -479,6 +487,49 @@ func extractHandlerName(expr ast.Expr) (string, []ast.Expr) {
 	}
 
 	return handlerSel.Sel.Name, handlerCall.Args
+}
+
+func typedRequestSource(expr ast.Expr) string {
+	call, ok := expr.(*ast.CallExpr)
+	if !ok {
+		return "request"
+	}
+	sel, ok := call.Fun.(*ast.SelectorExpr)
+	if !ok {
+		return "request"
+	}
+	switch sel.Sel.Name {
+	case "JSON":
+		return "body"
+	case "Request":
+		return "request"
+	default:
+		return "request"
+	}
+}
+
+func (ra *routeAnalyzer) extractTypedHandlerContract(fd *ast.FuncDecl, filePath string, imports map[string]string, source string) ([]ParamInfo, []ReturnInfo) {
+	if fd.Type.Params == nil || fd.Type.Results == nil || len(fd.Type.Results.List) == 0 {
+		return nil, nil
+	}
+	var params []ParamInfo
+	// The first parameter is Gin context. Any following parameter is the
+	// request contract in the current template.
+	if len(fd.Type.Params.List) > 1 {
+		typeStr := strings.TrimPrefix(exprString(fd.Type.Params.List[1].Type), "*")
+		info := ParamInfo{Source: source, StructType: typeStr}
+		if strings.Contains(typeStr, ".") {
+			parts := strings.SplitN(typeStr, ".", 2)
+			if pkg, ok := imports[parts[0]]; ok {
+				info.Package = pkg
+				info.Fields = ra.resolveStructFields(pkg, parts[1])
+			}
+		}
+		params = append(params, info)
+	}
+	responseType := exprString(fd.Type.Results.List[0].Type)
+	response := ReturnInfo{Type: responseType, Description: "success", Fields: ra.resolveReturnFields(responseType, filePath, imports)}
+	return params, []ReturnInfo{response}
 }
 
 // findInnerHandlerBody finds the inner closure body from a handler method.

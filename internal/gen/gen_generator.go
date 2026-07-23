@@ -55,6 +55,11 @@ type Generator struct {
 	StructRouteName string
 	StructBizName   string
 	StructRepoName  string
+
+	// UseRouteRegistry is enabled by templates that expose a central
+	// NewRouteRegistry function.  Older projects keep their existing root.go
+	// mutation behaviour unchanged.
+	UseRouteRegistry bool
 }
 
 type Request struct {
@@ -92,8 +97,14 @@ func Execute(req Request) error {
 		if err := g.GenRoute(); err != nil {
 			return err
 		}
-		if err := g.updateRoot(); err != nil {
-			return err
+		if g.UseRouteRegistry {
+			if err := g.updateRouteRegistry(); err != nil {
+				return err
+			}
+		} else {
+			if err := g.updateRoot(); err != nil {
+				return err
+			}
 		}
 		if err := g.updateRouteProvider(); err != nil {
 			return err
@@ -184,8 +195,18 @@ func (g *Generator) prepare() error {
 	g.StructRouteName = strcase.ToCamel(g.Name + "Route")
 	g.StructBizName = strcase.ToCamel(g.Name + "Biz")
 	g.StructRepoName = strcase.ToCamel(g.Name + "Repository")
+	g.UseRouteRegistry = g.hasRouteRegistry()
 
 	return nil
+}
+
+func (g *Generator) hasRouteRegistry() bool {
+	registryPath := filepath.Join(filepath.Dir(g.RootPath), "registry.go")
+	source, err := os.ReadFile(registryPath)
+	if err != nil {
+		return false
+	}
+	return strings.Contains(string(source), "func NewRouteRegistry(")
 }
 
 func (g *Generator) GenRoute() error {
@@ -307,6 +328,62 @@ func (g *Generator) updateRoot() error {
 	}
 
 	utils.Info("updating root.go success")
+	return nil
+}
+
+// updateRouteRegistry adds a newly generated route to the new template's
+// central registry.  It deliberately does not touch root.go: projects without
+// this opt-in structure continue through updateRoot above.
+func (g *Generator) updateRouteRegistry() error {
+	registryPath := filepath.Join(filepath.Dir(g.RootPath), "registry.go")
+	fset := token.NewFileSet()
+	f, err := parser.ParseFile(fset, registryPath, nil, parser.ParseComments)
+	if err != nil {
+		return fmt.Errorf("parse route registry %s: %w", registryPath, err)
+	}
+
+	var registry *ast.FuncDecl
+	for _, decl := range f.Decls {
+		fd, ok := decl.(*ast.FuncDecl)
+		if ok && fd.Name.Name == "NewRouteRegistry" {
+			registry = fd
+			break
+		}
+	}
+	if registry == nil || registry.Type.Params == nil || registry.Body == nil {
+		return fmt.Errorf("can't find NewRouteRegistry in %s", registryPath)
+	}
+
+	varName := strcase.ToLowerCamel(g.StructRouteName)
+	typeExpr, err := parser.ParseExpr(fmt.Sprintf("*%s.%s", g.PackageName, g.StructRouteName))
+	if err != nil {
+		return err
+	}
+	registry.Type.Params.List = append(registry.Type.Params.List, &ast.Field{
+		Names: []*ast.Ident{ast.NewIdent(varName)},
+		Type:  typeExpr,
+	})
+
+	for _, stmt := range registry.Body.List {
+		ret, ok := stmt.(*ast.ReturnStmt)
+		if !ok || len(ret.Results) != 1 {
+			continue
+		}
+		if literal, ok := ret.Results[0].(*ast.CompositeLit); ok {
+			literal.Elts = append(literal.Elts, ast.NewIdent(varName))
+			break
+		}
+	}
+
+	g.addPackageImport(fset, f)
+	var dst bytes.Buffer
+	if err := format.Node(&dst, fset, f); err != nil {
+		return err
+	}
+	if err := utils.SaveToFile(registryPath, dst.Bytes(), true); err != nil {
+		return err
+	}
+	utils.Info("updating route registry success")
 	return nil
 }
 
