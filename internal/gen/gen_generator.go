@@ -29,26 +29,29 @@ type Generator struct {
 	ModName         string
 	Pkg             string // explicit package/subdir (CLI mode)
 
-	WithCRUD  bool
-	WithIface bool // generate _biz_iface.go + mockgen directive
-	EntName   string
-	V2        bool
+	WithCRUD      bool
+	WithIface     bool // generate _biz_iface.go + mockgen directive
+	WithContracts bool // generate business Command/Query contracts
+	EntName       string
+	V2            bool
 
-	routeTpl     string
-	bizTpl       string
-	bizIfaceTpl  string
-	repoTpl      string
-	bizParamsTpl string
+	routeTpl       string
+	bizTpl         string
+	bizIfaceTpl    string
+	repoTpl        string
+	bizParamsTpl   string
+	bizContractTpl string
 
 	FilenameRouteSuffix string
 	FilenameBizSuffix   string
 	FilenameRepoSuffix  string
 
-	saveRouteFilePath     string
-	saveBizFilePath       string
-	saveBizIfaceFilePath  string
-	saveRepoFilePath      string
-	saveBizParamsFilePath string
+	saveRouteFilePath       string
+	saveBizFilePath         string
+	saveBizIfaceFilePath    string
+	saveRepoFilePath        string
+	saveBizParamsFilePath   string
+	saveBizContractFilePath string
 
 	Name     string
 	TypeName string
@@ -65,30 +68,35 @@ type Generator struct {
 	// project can use RouteRegistry while continuing to generate WrapData
 	// handlers until its API contracts are migrated.
 	UseTypedAPI bool
+	// UseRouterRegister is enabled after the optional router-injection
+	// migration. Older registry projects continue to receive g-backed routes.
+	UseRouterRegister bool
 }
 
 type Request struct {
-	TypeName   string
-	Name       string
-	Pkg        string // route sub-package (e.g. "v1"); required for route in CLI mode
-	NoRepo     bool
-	WithCRUD   bool
-	WithParams bool
-	WithIface  bool // generate a _biz_iface.go file and add a mockgen directive
-	EntName    string
-	V2         bool
-	SkipWire   bool
+	TypeName      string
+	Name          string
+	Pkg           string // route sub-package (e.g. "v1"); required for route in CLI mode
+	NoRepo        bool
+	WithCRUD      bool
+	WithParams    bool
+	WithIface     bool // generate a _biz_iface.go file and add a mockgen directive
+	WithContracts bool // generate Command/Query types for transport-neutral biz APIs
+	EntName       string
+	V2            bool
+	SkipWire      bool
 }
 
 func NewGenerator(req Request) *Generator {
 	return &Generator{
-		Name:      req.Name,
-		TypeName:  req.TypeName,
-		Pkg:       req.Pkg,
-		WithCRUD:  req.WithCRUD,
-		WithIface: req.WithIface,
-		EntName:   req.EntName,
-		V2:        req.V2,
+		Name:          req.Name,
+		TypeName:      req.TypeName,
+		Pkg:           req.Pkg,
+		WithCRUD:      req.WithCRUD,
+		WithIface:     req.WithIface,
+		WithContracts: req.WithContracts,
+		EntName:       req.EntName,
+		V2:            req.V2,
 	}
 }
 
@@ -143,6 +151,11 @@ func Execute(req Request) error {
 		}
 		if req.WithParams {
 			if err := g.GenParams(); err != nil {
+				return err
+			}
+		}
+		if req.WithContracts {
+			if err := g.GenBizContracts(); err != nil {
 				return err
 			}
 		}
@@ -210,18 +223,21 @@ func (g *Generator) prepare() error {
 	g.saveBizIfaceFilePath = filepath.Join(g.RootPath, strcase.ToSnake(g.Name)+"_biz_iface.go")
 	g.saveRepoFilePath = filepath.Join(filepath.Dir(g.RootPath), "data", strcase.ToSnake(g.Name)+g.FilenameRepoSuffix)
 	g.saveBizParamsFilePath = filepath.Join(g.RootPath, "../domain/params", strcase.ToSnake(g.Name)+"_params.go")
+	g.saveBizContractFilePath = filepath.Join(g.RootPath, strcase.ToSnake(g.Name)+"_contract.go")
 
 	g.routeTpl = tpl.RouteTpl
 	g.bizTpl = tpl.BizTpl
 	g.bizIfaceTpl = tpl.BizIfaceTpl
 	g.repoTpl = tpl.RepoTpl
 	g.bizParamsTpl = tpl.BizParamsTpl
+	g.bizContractTpl = tpl.BizContractTpl
 
 	g.StructRouteName = strcase.ToCamel(g.Name + "Route")
 	g.StructBizName = strcase.ToCamel(g.Name + "Biz")
 	g.StructRepoName = strcase.ToCamel(g.Name + "Repository")
 	g.UseRouteRegistry = g.hasRouteRegistry()
 	g.UseTypedAPI = g.hasTypedAPI()
+	g.UseRouterRegister = g.hasRouterRegister()
 
 	return nil
 }
@@ -242,6 +258,15 @@ func (g *Generator) hasRouteRegistry() bool {
 		return false
 	}
 	return strings.Contains(string(source), "func NewRouteRegistry(")
+}
+
+func (g *Generator) hasRouterRegister() bool {
+	registryPath := filepath.Join(filepath.Dir(g.RootPath), "registry.go")
+	source, err := os.ReadFile(registryPath)
+	if err != nil {
+		return false
+	}
+	return strings.Contains(string(source), "Register(router gin.IRouter)")
 }
 
 func (g *Generator) GenRoute() error {
@@ -299,6 +324,15 @@ func (g *Generator) GenParams() error {
 	}
 
 	utils.Info("generate params success")
+	return nil
+}
+
+func (g *Generator) GenBizContracts() error {
+	if err := g.renderTemplateToFile("biz_contract", g.bizContractTpl, g.saveBizContractFilePath); err != nil {
+		return err
+	}
+
+	utils.Info("generate biz contracts success")
 	return nil
 }
 

@@ -23,7 +23,7 @@ const (
 	genTypeBiz   = "biz"
 )
 
-var legacyGenFlagNames = []string{"type", "name", "no-repo", "v2", "with-crud", "with-params", "with-iface", "ent-name", "pkg", "skip-wire"}
+var legacyGenFlagNames = []string{"type", "name", "no-repo", "v2", "with-crud", "with-params", "with-iface", "with-contracts", "ent-name", "pkg", "skip-wire"}
 
 var genCmd = &cobra.Command{
 	Use:   "gen",
@@ -98,6 +98,7 @@ func newGenRequest(cmd *cobra.Command, typeName string) (internalgen.Request, er
 		req.WithCRUD, _ = cmd.Flags().GetBool("with-crud")
 		req.WithParams, _ = cmd.Flags().GetBool("with-params")
 		req.WithIface, _ = cmd.Flags().GetBool("with-iface")
+		req.WithContracts, _ = cmd.Flags().GetBool("with-contracts")
 		req.EntName, _ = cmd.Flags().GetString("ent-name")
 	case "":
 		return internalgen.Request{}, errors.New("please specify a generator type")
@@ -125,6 +126,7 @@ func bindBizFlags(flags *pflag.FlagSet) {
 	flags.Bool("with-crud", false, "generate crud section in repo and biz file")
 	flags.Bool("with-params", false, "generate params file")
 	flags.Bool("with-iface", false, "generate a _biz_iface.go file and add a mockgen directive to mocks/mock_gen.go")
+	flags.Bool("with-contracts", false, "generate transport-neutral Command/Query types for the biz layer")
 	flags.String("ent-name", "", "generate crud section's ent name")
 }
 

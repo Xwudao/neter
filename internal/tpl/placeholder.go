@@ -14,6 +14,9 @@ var BizIfaceTpl string
 //go:embed biz_params.tpl
 var BizParamsTpl string
 
+//go:embed biz_contract.tpl
+var BizContractTpl string
+
 //go:embed repo.tpl
 var RepoTpl string
 

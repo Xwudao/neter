@@ -18,31 +18,35 @@ import (
 
 type {{.StructRouteName}} struct {
 	conf *koanf.Koanf
+	{{if not .UseRouterRegister}}g    *gin.Engine
+	{{end}}
 	log        *zap.SugaredLogger
 }
 
-func New{{.StructRouteName}}(log *zap.SugaredLogger, conf *koanf.Koanf) *{{.StructRouteName}} {
+func New{{.StructRouteName}}({{if not .UseRouterRegister}}g *gin.Engine, {{end}}log *zap.SugaredLogger, conf *koanf.Koanf) *{{.StructRouteName}} {
 	r := &{{.StructRouteName}}{
 		conf: conf,
+		{{if not .UseRouterRegister}}g:    g,
+		{{end}}
 		log:  log.Named("{{.ToKebab .StructRouteName}}"),
 	}
 
 	return r
 }
 
-func (r *{{.StructRouteName}}) {{if .UseRouteRegistry}}Register{{else}}Reg{{end}}(router gin.IRouter) {
-	// router.GET("/{{.PackageName}}/{{.ToSnake .Name}}", {{if .UseTypedAPI}}core.NoInput(r.{{.ToLowerCamel .Name}}){{else}}core.WrapData(r.{{.ToLowerCamel .Name}}()){{end}})
+func (r *{{.StructRouteName}}) {{if .UseRouteRegistry}}Register{{else}}Reg{{end}}({{if .UseRouterRegister}}router gin.IRouter{{end}}) {
+	// {{if .UseRouterRegister}}router{{else}}r.g{{end}}.GET("/{{.PackageName}}/{{.ToSnake .Name}}", {{if .UseTypedAPI}}core.NoInput(r.{{.ToLowerCamel .Name}}){{else}}core.WrapData(r.{{.ToLowerCamel .Name}}()){{end}})
 
-	group := router.Group("/{{.PackageName}}/{{.ToSnake .Name}}")
+	group := {{if .UseRouterRegister}}router{{else}}r.g{{end}}.Group("/{{.PackageName}}/{{.ToSnake .Name}}")
 	{
 		group.GET("", {{if .UseTypedAPI}}core.NoInput(r.{{.ToLowerCamel .Name}}){{else}}core.WrapData(r.{{.ToLowerCamel .Name}}()){{end}})
 	}
-	authGroup := router.Group("/auth/{{.PackageName}}/{{.ToSnake .Name}}").Use(mdw.MustLoginMiddleware())
+	authGroup := {{if .UseRouterRegister}}router{{else}}r.g{{end}}.Group("/auth/{{.PackageName}}/{{.ToSnake .Name}}").Use(mdw.MustLoginMiddleware())
 	{
 		// authGroup.GET("/auth", {{if .UseTypedAPI}}core.NoInput(r.{{.ToLowerCamel .Name}}){{else}}core.WrapData(r.{{.ToLowerCamel .Name}}()){{end}})
 		_ = authGroup
 	}
-	adminGroup := router.Group("/admin/{{.PackageName}}/{{.ToSnake .Name}}").Use(mdw.MustWithRoleMiddleware(user.RoleAdmin))
+	adminGroup := {{if .UseRouterRegister}}router{{else}}r.g{{end}}.Group("/admin/{{.PackageName}}/{{.ToSnake .Name}}").Use(mdw.MustWithRoleMiddleware(user.RoleAdmin))
 	{
 		_ = adminGroup
 	}
