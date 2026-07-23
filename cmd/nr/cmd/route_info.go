@@ -196,7 +196,7 @@ func detectServerFromConfig(projectDir string) string {
 	const portKey = "port:"
 
 	inApp := false
-	for _, line := range strings.Split(content, "\n") {
+	for line := range strings.SplitSeq(content, "\n") {
 		trimmed := strings.TrimSpace(line)
 
 		// Skip empty lines and comments.

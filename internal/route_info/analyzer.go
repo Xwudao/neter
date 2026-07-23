@@ -1028,9 +1028,9 @@ func (ra *routeAnalyzer) resolveStructFields(fullPkgPath, typeName string) []Fie
 	}
 
 	// For external or local packages, try to find the directory.
-	if strings.HasPrefix(fullPkgPath, ra.moduleName) {
+	if after, ok := strings.CutPrefix(fullPkgPath, ra.moduleName); ok {
 		// Local project package.
-		rel := strings.TrimPrefix(fullPkgPath, ra.moduleName)
+		rel := after
 		rel = strings.TrimPrefix(rel, "/")
 		pkgDir = filepath.Join(ra.projectRoot, rel)
 	} else {
@@ -1115,8 +1115,8 @@ func (ra *routeAnalyzer) extractFieldsFromStruct(st *ast.StructType) []FieldInfo
 			}
 			// Try to resolve nested struct type — strip slice/pointer wrappers.
 			nestedType := strings.TrimLeft(typeStr, "*[]")
-			if strings.HasPrefix(typeStr, "[]") {
-				nestedType = strings.TrimPrefix(typeStr, "[]")
+			if after, ok := strings.CutPrefix(typeStr, "[]"); ok {
+				nestedType = after
 			}
 			nestedType = strings.TrimLeft(nestedType, "*")
 
@@ -1139,7 +1139,7 @@ func (ra *routeAnalyzer) extractFieldsFromStruct(st *ast.StructType) []FieldInfo
 // required rule. Binding tags frequently include additional validators, e.g.
 // binding:"required,alphanum,min=6", so an exact tag match is insufficient.
 func bindingTagRequired(tag string) bool {
-	for _, rule := range strings.Split(reflect.StructTag(tag).Get("binding"), ",") {
+	for rule := range strings.SplitSeq(reflect.StructTag(tag).Get("binding"), ",") {
 		if strings.TrimSpace(rule) == "required" {
 			return true
 		}

@@ -612,16 +612,16 @@ func tagName(tag, key, fallback string) string {
 		return fallback
 	}
 	needle := key + `:"`
-	idx := strings.Index(tag, needle)
-	if idx < 0 {
+	_, after, ok := strings.Cut(tag, needle)
+	if !ok {
 		return fallback
 	}
-	rest := tag[idx+len(needle):]
-	end := strings.Index(rest, `"`)
-	if end < 0 {
+	rest := after
+	before, _, ok := strings.Cut(rest, `"`)
+	if !ok {
 		return fallback
 	}
-	name := rest[:end]
+	name := before
 	if comma := strings.Index(name, ","); comma >= 0 {
 		name = name[:comma]
 	}

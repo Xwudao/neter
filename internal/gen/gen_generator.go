@@ -60,6 +60,10 @@ type Generator struct {
 	// NewRouteRegistry function.  Older projects keep their existing root.go
 	// mutation behaviour unchanged.
 	UseRouteRegistry bool
+	// UseTypedAPI is separate from route registration. A migrated legacy
+	// project can use RouteRegistry while continuing to generate WrapData
+	// handlers until its API contracts are migrated.
+	UseTypedAPI bool
 }
 
 type Request struct {
@@ -196,8 +200,18 @@ func (g *Generator) prepare() error {
 	g.StructBizName = strcase.ToCamel(g.Name + "Biz")
 	g.StructRepoName = strcase.ToCamel(g.Name + "Repository")
 	g.UseRouteRegistry = g.hasRouteRegistry()
+	g.UseTypedAPI = g.hasTypedAPI()
 
 	return nil
+}
+
+func (g *Generator) hasTypedAPI() bool {
+	root := filepath.Dir(filepath.Dir(g.RootPath))
+	source, err := os.ReadFile(filepath.Join(root, "core", "rtn.go"))
+	if err != nil {
+		return false
+	}
+	return strings.Contains(string(source), "func NoInput[")
 }
 
 func (g *Generator) hasRouteRegistry() bool {

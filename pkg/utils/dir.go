@@ -2,7 +2,7 @@ package utils
 
 import (
 	"errors"
-	"io/ioutil"
+
 	"os"
 	"path/filepath"
 	"regexp"
@@ -51,7 +51,7 @@ func GetModName() (mod string) {
 			continue
 		}
 
-		cnt, err := ioutil.ReadFile(fp)
+		cnt, err := os.ReadFile(fp)
 		if err != nil {
 			dir = filepath.Join(dir, "..")
 			continue

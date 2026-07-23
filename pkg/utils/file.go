@@ -4,7 +4,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
-	"io/ioutil"
+
 	"os"
 	"path/filepath"
 	"strings"
@@ -20,7 +20,7 @@ func SaveToFile(p string, cnt []byte, cover bool) (err error) {
 			return fmt.Errorf("file [%s] existed, please rename or remove it", p)
 		}
 	}
-	err = ioutil.WriteFile(p, cnt, os.ModePerm)
+	err = os.WriteFile(p, cnt, os.ModePerm)
 	if err != nil {
 		return
 	}

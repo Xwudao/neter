@@ -18,39 +18,45 @@ import (
 
 type {{.StructRouteName}} struct {
 	conf *koanf.Koanf
-	g    *gin.Engine
 	log        *zap.SugaredLogger
 }
 
-func New{{.StructRouteName}}(g *gin.Engine, log *zap.SugaredLogger, conf *koanf.Koanf) *{{.StructRouteName}} {
+func New{{.StructRouteName}}(log *zap.SugaredLogger, conf *koanf.Koanf) *{{.StructRouteName}} {
 	r := &{{.StructRouteName}}{
 		conf: conf,
-		g:    g,
 		log:  log.Named("{{.ToKebab .StructRouteName}}"),
 	}
 
 	return r
 }
 
-func (r *{{.StructRouteName}}) {{if .UseRouteRegistry}}Register{{else}}Reg{{end}}() {
-	// r.g.GET("/{{.PackageName}}/{{.ToSnake .Name}}", core.NoInput(r.{{.ToLowerCamel .Name}}))
+func (r *{{.StructRouteName}}) {{if .UseRouteRegistry}}Register{{else}}Reg{{end}}(router gin.IRouter) {
+	// router.GET("/{{.PackageName}}/{{.ToSnake .Name}}", {{if .UseTypedAPI}}core.NoInput(r.{{.ToLowerCamel .Name}}){{else}}core.WrapData(r.{{.ToLowerCamel .Name}}()){{end}})
 
-	group := r.g.Group("/{{.PackageName}}/{{.ToSnake .Name}}")
+	group := router.Group("/{{.PackageName}}/{{.ToSnake .Name}}")
 	{
-		group.GET("", core.NoInput(r.{{.ToLowerCamel .Name}}))
+		group.GET("", {{if .UseTypedAPI}}core.NoInput(r.{{.ToLowerCamel .Name}}){{else}}core.WrapData(r.{{.ToLowerCamel .Name}}()){{end}})
 	}
-	authGroup := r.g.Group("/auth/{{.PackageName}}/{{.ToSnake .Name}}").Use(mdw.MustLoginMiddleware())
+	authGroup := router.Group("/auth/{{.PackageName}}/{{.ToSnake .Name}}").Use(mdw.MustLoginMiddleware())
 	{
-		// authGroup.GET("/auth", core.NoInput(r.{{.ToLowerCamel .Name}}))
+		// authGroup.GET("/auth", {{if .UseTypedAPI}}core.NoInput(r.{{.ToLowerCamel .Name}}){{else}}core.WrapData(r.{{.ToLowerCamel .Name}}()){{end}})
 		_ = authGroup
 	}
-	adminGroup := r.g.Group("/admin/{{.PackageName}}/{{.ToSnake .Name}}").Use(mdw.MustWithRoleMiddleware(user.RoleAdmin))
+	adminGroup := router.Group("/admin/{{.PackageName}}/{{.ToSnake .Name}}").Use(mdw.MustWithRoleMiddleware(user.RoleAdmin))
 	{
 		_ = adminGroup
 	}
 }
 
 
+{{if .UseTypedAPI -}}
 func (r *{{.StructRouteName}}) {{.ToLowerCamel .Name}}(c *gin.Context) (string, *core.RtnStatus) {
 	return "hello", nil
 }
+{{else -}}
+func (r *{{.StructRouteName}}) {{.ToLowerCamel .Name}}() core.WrappedHandlerFunc {
+	return func(c *gin.Context) (any, *core.RtnStatus) {
+		return "hello", nil
+	}
+}
+{{end}}

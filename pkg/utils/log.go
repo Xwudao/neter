@@ -5,6 +5,7 @@ import (
 	"log"
 	"os"
 	"path/filepath"
+	"slices"
 )
 
 func CheckErrWithStatus(err error) {
@@ -32,12 +33,7 @@ func LoadFiles(dir string, filter func(filename string) bool) (filenames []strin
 }
 
 func InStrArr(arr []string, aim string) bool {
-	for i := range arr {
-		if arr[i] == aim {
-			return true
-		}
-	}
-	return false
+	return slices.Contains(arr, aim)
 }
 func CheckExist(p string) bool {
 	_, err := os.Stat(p)

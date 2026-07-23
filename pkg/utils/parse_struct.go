@@ -4,7 +4,7 @@ import (
 	"go/ast"
 	"go/parser"
 	"go/token"
-	"io/ioutil"
+	"os"
 )
 
 type StructFields []*ast.Field
@@ -13,7 +13,7 @@ func ParseStruct(filename string, src []byte) (structMap map[string]StructFields
 	structMap = make(map[string]StructFields)
 
 	if src == nil {
-		src, err = ioutil.ReadFile(filename)
+		src, err = os.ReadFile(filename)
 		if err != nil {
 			return structMap, err
 		}

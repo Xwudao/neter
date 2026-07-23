@@ -11,7 +11,7 @@ import (
 	"go/format"
 	"go/parser"
 	"go/token"
-	"io/ioutil"
+
 	"os"
 	"os/exec"
 	"path"
@@ -140,7 +140,7 @@ func (i *InitProject) write(filename string, node *ast.File, fset *token.FileSet
 		return fmt.Errorf("no file name")
 	}
 
-	err = ioutil.WriteFile(filename, buf.Bytes(), os.ModePerm)
+	err = os.WriteFile(filename, buf.Bytes(), os.ModePerm)
 	if err != nil {
 		return fmt.Errorf("write file err: %s", err.Error())
 	}

@@ -11,7 +11,6 @@ import (
 	"flag"
 	"fmt"
 	"io"
-	"io/ioutil"
 	"strconv"
 	"strings"
 	"unicode"
@@ -268,7 +267,7 @@ func (scanner *Scanner) getTokens(max int) ([]string, string, error) {
 
 				if !unicode.IsSpace(c) {
 					scanner.in.UnreadRune()
-					rest, err := ioutil.ReadAll(scanner.in)
+					rest, err := io.ReadAll(scanner.in)
 					return tokens, string(rest), err
 				}
 
@@ -289,7 +288,7 @@ func (scanner *Scanner) getTokens(max int) ([]string, string, error) {
 
 	}
 
-	rest, err := ioutil.ReadAll(scanner.in)
+	rest, err := io.ReadAll(scanner.in)
 	if err == io.EOF {
 		err = nil
 	}
