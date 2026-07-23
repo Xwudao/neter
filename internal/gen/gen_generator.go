@@ -9,6 +9,7 @@ import (
 	"go/parser"
 	"go/token"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"strings"
 	"text/template"
@@ -76,6 +77,7 @@ type Request struct {
 	WithIface  bool // generate a _biz_iface.go file and add a mockgen directive
 	EntName    string
 	V2         bool
+	SkipWire   bool
 }
 
 func NewGenerator(req Request) *Generator {
@@ -113,6 +115,11 @@ func Execute(req Request) error {
 		if err := g.updateRouteProvider(); err != nil {
 			return err
 		}
+		if !req.SkipWire {
+			if err := g.generateWire(); err != nil {
+				return err
+			}
+		}
 		utils.Info("generate route success")
 	case "biz":
 		if err := g.GenBiz(); err != nil {
@@ -144,6 +151,20 @@ func Execute(req Request) error {
 		return errors.New("unknown type")
 	}
 
+	return nil
+}
+
+func (g *Generator) generateWire() error {
+	projectRoot, err := utils.FindProjectRoot(8)
+	if err != nil {
+		return fmt.Errorf("find project root for Wire: %w", err)
+	}
+	cmd := exec.Command("wire", "./cmd/app")
+	cmd.Dir = projectRoot
+	cmd.Stdout, cmd.Stderr = os.Stdout, os.Stderr
+	if err := cmd.Run(); err != nil {
+		return fmt.Errorf("regenerate Wire: %w", err)
+	}
 	return nil
 }
 
@@ -394,7 +415,14 @@ func (g *Generator) updateRouteRegistry() error {
 	if err := format.Node(&dst, fset, f); err != nil {
 		return err
 	}
-	if err := utils.SaveToFile(registryPath, dst.Bytes(), true); err != nil {
+	// New AST nodes have no original source position. go/format can therefore
+	// keep them on the preceding line even when the registry was multi-line.
+	// Keep constructor parameters and registry elements one-per-line.
+	typeText := fmt.Sprintf("*%s.%s", g.PackageName, g.StructRouteName)
+	source := strings.ReplaceAll(dst.String(), ", "+varName+" "+typeText+",", ",\n\t"+varName+" "+typeText+",")
+	source = strings.ReplaceAll(source, ", "+varName+" "+typeText+"\n", ",\n\t"+varName+" "+typeText+"\n")
+	source = strings.ReplaceAll(source, ", "+varName+",", ",\n\t\t"+varName+",")
+	if err := utils.SaveToFile(registryPath, []byte(source), true); err != nil {
 		return err
 	}
 	utils.Info("updating route registry success")

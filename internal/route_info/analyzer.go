@@ -529,7 +529,33 @@ func (ra *routeAnalyzer) extractTypedHandlerContract(fd *ast.FuncDecl, filePath 
 	}
 	responseType := exprString(fd.Type.Results.List[0].Type)
 	response := ReturnInfo{Type: responseType, Description: "success", Fields: ra.resolveReturnFields(responseType, filePath, imports)}
+	// Typed handlers expose the response type in their signature. For map-like
+	// responses such as gin.H, the signature alone cannot describe its shape,
+	// so retain keys and value types from an inline success literal.
+	if fd.Body != nil {
+		ast.Inspect(fd.Body, func(node ast.Node) bool {
+			ret, ok := node.(*ast.ReturnStmt)
+			if !ok || len(ret.Results) == 0 {
+				return true
+			}
+			if literal, ok := ret.Results[0].(*ast.CompositeLit); ok {
+				info := ra.returnInfoFromExpr(literal, nil, filePath, imports, "success")
+				if (info.Type == responseType || (isMapResponse(responseType) && isMapLiteral(info.Type))) && len(info.Fields) > 0 {
+					response.Fields = info.Fields
+				}
+			}
+			return true
+		})
+	}
 	return params, []ReturnInfo{response}
+}
+
+func isMapResponse(typeName string) bool {
+	return strings.HasPrefix(typeName, "map[")
+}
+
+func isMapLiteral(typeName string) bool {
+	return strings.HasPrefix(typeName, "map[") || typeName == "gin.H"
 }
 
 // findInnerHandlerBody finds the inner closure body from a handler method.
@@ -1408,8 +1434,15 @@ func returnExprType(expr ast.Expr) string {
 		// Variable — try to be descriptive
 		return e.Name
 	case *ast.BasicLit:
-		if e.Kind == token.STRING {
+		switch e.Kind {
+		case token.STRING:
 			return "string"
+		case token.INT:
+			return "int"
+		case token.FLOAT:
+			return "float64"
+		case token.CHAR:
+			return "rune"
 		}
 		return e.Kind.String()
 	case *ast.CallExpr:

@@ -130,7 +130,20 @@ func migrateRoutes(root string, apply, skipWire bool) error {
 	rootFile := filepath.Join(root, "internal", "routes", "root.go")
 	registryFile := filepath.Join(root, "internal", "routes", "registry.go")
 	if _, err := os.Stat(registryFile); err == nil {
-		return fmt.Errorf("RouteRegistry already exists: %s", registryFile)
+		if !apply {
+			return fmt.Errorf("RouteRegistry already exists: %s", registryFile)
+		}
+		// A previous migration may have stopped after creating the registry
+		// (for example because a non-source reference file was encountered).
+		// Resume only the remaining route-method rewrite and Wire generation.
+		if err := renameRouteRegMethods(root); err != nil {
+			return err
+		}
+		if !skipWire {
+			return regenerateWire(root)
+		}
+		fmt.Println("RouteRegistry migration resumed.")
+		return nil
 	}
 	src, err := os.ReadFile(rootFile)
 	if err != nil {
@@ -182,11 +195,8 @@ func migrateRoutes(root string, apply, skipWire bool) error {
 		return err
 	}
 	if !skipWire {
-		wire := exec.Command("wire", "./cmd/app")
-		wire.Dir = root
-		wire.Stdout, wire.Stderr = os.Stdout, os.Stderr
-		if err := wire.Run(); err != nil {
-			return fmt.Errorf("migration written but Wire regeneration failed: %w", err)
+		if err := regenerateWire(root); err != nil {
+			return err
 		}
 	}
 	fmt.Println("RouteRegistry migration written.")
@@ -307,7 +317,13 @@ func stripMigratedRouteImports(source string, routes []legacyRoute) string {
 func verifyOnlyRouteRegCalls(root string) error {
 	var bad []string
 	_ = filepath.WalkDir(root, func(path string, d os.DirEntry, err error) error {
-		if err != nil || d.IsDir() || !strings.HasSuffix(path, ".go") {
+		if err != nil {
+			return err
+		}
+		if d.IsDir() && (d.Name() == ".agents" || d.Name() == ".git" || d.Name() == "vendor" || d.Name() == "node_modules") {
+			return filepath.SkipDir
+		}
+		if d.IsDir() || !strings.HasSuffix(path, ".go") {
 			return err
 		}
 		b, _ := os.ReadFile(path)
@@ -325,7 +341,7 @@ func verifyOnlyRouteRegCalls(root string) error {
 }
 
 func renameRouteRegMethods(root string) error {
-	return filepath.WalkDir(root, func(path string, d os.DirEntry, err error) error {
+	return filepath.WalkDir(filepath.Join(root, "internal", "routes"), func(path string, d os.DirEntry, err error) error {
 		if err != nil || d.IsDir() || !strings.HasSuffix(path, ".go") || strings.Contains(path, "/internal/data/ent/") {
 			return err
 		}
@@ -339,6 +355,16 @@ func renameRouteRegMethods(root string) error {
 		s = strings.ReplaceAll(s, ".Reg()", ".Register()")
 		return writeFormatted(path, []byte(s))
 	})
+}
+
+func regenerateWire(root string) error {
+	wire := exec.Command("wire", "./cmd/app")
+	wire.Dir = root
+	wire.Stdout, wire.Stderr = os.Stdout, os.Stderr
+	if err := wire.Run(); err != nil {
+		return fmt.Errorf("migration written but Wire regeneration failed: %w", err)
+	}
+	return nil
 }
 
 func writeFormatted(path string, source []byte) error {
