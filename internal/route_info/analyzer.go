@@ -540,7 +540,7 @@ func (ra *routeAnalyzer) extractTypedHandlerContract(fd *ast.FuncDecl, filePath 
 			}
 			if literal, ok := ret.Results[0].(*ast.CompositeLit); ok {
 				info := ra.returnInfoFromExpr(literal, nil, filePath, imports, "success")
-				if (info.Type == responseType || (isMapResponse(responseType) && isMapLiteral(info.Type))) && len(info.Fields) > 0 {
+				if (info.Type == responseType || (isMapResponse(responseType) && isMapLiteral(info.Type)) || (isSliceResponse(responseType) && isSliceLiteral(info.Type))) && len(info.Fields) > 0 {
 					response.Fields = info.Fields
 				}
 			}
@@ -556,6 +556,14 @@ func isMapResponse(typeName string) bool {
 
 func isMapLiteral(typeName string) bool {
 	return strings.HasPrefix(typeName, "map[") || typeName == "gin.H"
+}
+
+func isSliceResponse(typeName string) bool {
+	return strings.HasPrefix(typeName, "[]")
+}
+
+func isSliceLiteral(typeName string) bool {
+	return strings.HasPrefix(typeName, "[]")
 }
 
 // findInnerHandlerBody finds the inner closure body from a handler method.
@@ -969,16 +977,30 @@ func (ra *routeAnalyzer) returnInfoFromExpr(expr ast.Expr, varTypes map[string]s
 		if len(info.Fields) == 0 && cl.Elts != nil {
 			for _, elt := range cl.Elts {
 				kv, ok := elt.(*ast.KeyValueExpr)
-				if !ok {
+				if ok {
+					keyStr := extractCompositeLitKey(kv.Key)
+					if keyStr == "" {
+						continue
+					}
+					field := FieldInfo{
+						Name: keyStr,
+						Type: returnExprType(kv.Value),
+					}
+					if nested, ok := kv.Value.(*ast.CompositeLit); ok {
+						nestedInfo := ra.returnInfoFromExpr(nested, varTypes, filePath, imports, desc)
+						field.Fields = nestedInfo.Fields
+					}
+					info.Fields = append(info.Fields, field)
 					continue
 				}
-				keyStr := extractCompositeLitKey(kv.Key)
-				if keyStr != "" {
-					valType := returnExprType(kv.Value)
-					info.Fields = append(info.Fields, FieldInfo{
-						Name: keyStr,
-						Type: valType,
-					})
+				// An array literal has positional elements. Use its first inline
+				// object as the representative response-item schema.
+				if nested, ok := elt.(*ast.CompositeLit); ok {
+					nestedInfo := ra.returnInfoFromExpr(nested, varTypes, filePath, imports, desc)
+					if len(nestedInfo.Fields) > 0 {
+						info.Fields = nestedInfo.Fields
+						break
+					}
 				}
 			}
 		}
@@ -1430,6 +1452,9 @@ func returnExprType(expr ast.Expr) string {
 	case *ast.Ident:
 		if e.Name == "nil" {
 			return "nil"
+		}
+		if e.Name == "true" || e.Name == "false" {
+			return "bool"
 		}
 		// Variable — try to be descriptive
 		return e.Name

@@ -492,16 +492,15 @@ func generateTerminalRoute(r RouteInfo, server string) string {
 			b.WriteString("```json\n{\n")
 			b.WriteString("  \"code\": 200,\n")
 			b.WriteString("  \"msg\": \"ok\",\n")
-			b.WriteString("  \"data\": {\n")
-			for i, f := range ret.Fields {
-				comma := ","
-				if i == len(ret.Fields)-1 {
-					comma = ""
-				}
-				example := jsonExampleValue(f.Type)
-				b.WriteString(fmt.Sprintf("    \"%s\": %s%s\n", fieldName(f, "body"), example, comma))
+			b.WriteString("  \"data\": ")
+			if strings.HasPrefix(strings.TrimLeft(ret.Type, "*"), "[]") {
+				b.WriteString("[")
+				writeJSONObject(&b, ret.Fields, 2)
+				b.WriteString("]")
+			} else {
+				writeJSONObject(&b, ret.Fields, 1)
 			}
-			b.WriteString("  }\n")
+			b.WriteByte('\n')
 			b.WriteString("}\n")
 			b.WriteString("```\n\n")
 		} else {

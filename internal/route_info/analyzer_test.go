@@ -141,6 +141,49 @@ type UploadInput struct { ID string `+"`uri:\"id\" binding:\"required\"`"+` }
 	}
 }
 
+func TestAnalyzeRoutesExpandsNestedMapResponseLiterals(t *testing.T) {
+	root := t.TempDir()
+	writeRouteInfoFixture(t, root, "go.mod", "module example.test/app\n\ngo 1.24\n")
+	writeRouteInfoFixture(t, root, "api/status_route.go", `package api
+
+import (
+    "example.test/core"
+    "github.com/gin-gonic/gin"
+)
+
+type StatusRoute struct{}
+
+func (r *StatusRoute) Register(router gin.IRouter) {
+    group := router.Group("/api")
+    group.GET("/status", core.NoInput(r.status))
+    group.GET("/items", core.NoInput(r.items))
+}
+
+func (r *StatusRoute) status(c *gin.Context) (map[string]any, *core.RtnStatus) {
+    return gin.H{"name": "neter", "meta": gin.H{"enabled": true, "count": 2}, "items": []gin.H{{"id": 1}}}, nil
+}
+
+func (r *StatusRoute) items(c *gin.Context) ([]gin.H, *core.RtnStatus) {
+    return []gin.H{{"id": 1, "name": "first"}}, nil
+}
+`)
+	routes, err := AnalyzeRoutes(root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	fields := routes.Routes[0].Returns[0].Fields
+	if len(fields) != 3 || fields[1].Name != "meta" || len(fields[1].Fields) != 2 || fields[1].Fields[1].Type != "int" {
+		t.Fatalf("nested fields = %#v", fields)
+	}
+	if fields[2].Name != "items" || len(fields[2].Fields) != 1 || fields[2].Fields[0].Name != "id" {
+		t.Fatalf("nested array fields = %#v", fields[2])
+	}
+	itemFields := routes.Routes[1].Returns[0].Fields
+	if len(itemFields) != 2 || itemFields[0].Name != "id" || itemFields[1].Name != "name" {
+		t.Fatalf("array response fields = %#v", itemFields)
+	}
+}
+
 func hasParam(params []ParamInfo, source, key, structType string) bool {
 	for _, p := range params {
 		if p.Source == source && p.Key == key && p.StructType == structType {
