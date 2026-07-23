@@ -240,7 +240,11 @@ func rewriteLegacyRoot(src string, routes []legacyRoute) (string, error) {
 		src = strings.ReplaceAll(src, "\tr."+r.field+".Reg()\n", "")
 	}
 	if !strings.Contains(src, "\troutes RouteRegistry") {
-		src = strings.Replace(src, "\tcorsConf cors.Config\n", "\tcorsConf cors.Config\n\n\troutes RouteRegistry\n", 1)
+		engineStruct := regexp.MustCompile(`(?s)(type HttpEngine struct \{.*?)(\n\})`)
+		if !engineStruct.MatchString(src) {
+			return "", fmt.Errorf("unsupported root.go: can't find HttpEngine struct")
+		}
+		src = engineStruct.ReplaceAllString(src, "${1}\n\troutes RouteRegistry${2}")
 	}
 	needle := "\tctx *system.AppContext,\n"
 	if !strings.Contains(src, needle) {
@@ -307,6 +311,9 @@ func stripMigratedRouteImports(source string, routes []legacyRoute) string {
 		aliases[strings.TrimPrefix(strings.Split(route.typ, ".")[0], "*")] = true
 	}
 	for alias := range aliases {
+		if strings.Contains(source, alias+".") {
+			continue
+		}
 		// The root no longer references these route sub-packages after their
 		// fields move into registry.go. Match both named and default imports.
 		source = regexp.MustCompile(`(?m)^\s*(?:`+regexp.QuoteMeta(alias)+`\s+)?"[^"]+/internal/routes/`+regexp.QuoteMeta(alias)+`"\s*\n`).ReplaceAllString(source, "")
