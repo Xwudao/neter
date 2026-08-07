@@ -137,8 +137,10 @@ func (ra *routeAnalyzer) analyzeFile(filePath string) error {
 		return nil // not a route file
 	}
 
-	// Collect all method declarations.
-	methods := map[string]*ast.FuncDecl{}
+	// Collect all method declarations keyed by receiver struct name, so
+	// files containing multiple route structs (e.g. PointsRoute + EntertainmentRoute)
+	// do not overwrite each other's methods.
+	methods := map[string]map[string]*ast.FuncDecl{}
 	for _, decl := range f.Decls {
 		fd, ok := decl.(*ast.FuncDecl)
 		if !ok {
@@ -147,7 +149,14 @@ func (ra *routeAnalyzer) analyzeFile(filePath string) error {
 		if fd.Recv == nil || len(fd.Recv.List) == 0 {
 			continue
 		}
-		methods[fd.Name.Name] = fd
+		recvName := receiverStructName(fd.Recv.List[0].Type)
+		if recvName == "" {
+			continue
+		}
+		if methods[recvName] == nil {
+			methods[recvName] = map[string]*ast.FuncDecl{}
+		}
+		methods[recvName][fd.Name.Name] = fd
 	}
 
 	// For each route struct, analyze its Register() or legacy Reg() method.
@@ -164,31 +173,27 @@ func (ra *routeAnalyzer) analyzeFile(filePath string) error {
 
 // ─── Find Reg() method for a given route struct ─────────────────────────────
 
-func findRegMethod(structName string, methods map[string]*ast.FuncDecl) *ast.FuncDecl {
+func findRegMethod(structName string, methods map[string]map[string]*ast.FuncDecl) *ast.FuncDecl {
 	for _, name := range []string{"Register", "Reg"} {
-		reg, ok := methods[name]
-		if ok && isMethodOfStruct(reg, structName) {
+		if reg, ok := methods[structName][name]; ok {
 			return reg
 		}
 	}
 	return nil
 }
 
-func isMethodOfStruct(fd *ast.FuncDecl, structName string) bool {
-	if fd.Recv == nil || len(fd.Recv.List) == 0 {
-		return false
-	}
-	field := fd.Recv.List[0]
-	// Handle *StructName and StructName
-	switch t := field.Type.(type) {
+// receiverStructName extracts the struct name from a method receiver type
+// (handles *StructName and StructName).
+func receiverStructName(t ast.Expr) string {
+	switch tt := t.(type) {
 	case *ast.StarExpr:
-		if ident, ok := t.X.(*ast.Ident); ok {
-			return ident.Name == structName
+		if ident, ok := tt.X.(*ast.Ident); ok {
+			return ident.Name
 		}
 	case *ast.Ident:
-		return t.Name == structName
+		return tt.Name
 	}
-	return false
+	return ""
 }
 
 // ─── Extract route registrations from Reg() body ────────────────────────────
@@ -198,7 +203,7 @@ func (ra *routeAnalyzer) extractRegistrations(
 	filePath string,
 	structName string,
 	regMethod *ast.FuncDecl,
-	methods map[string]*ast.FuncDecl,
+	methods map[string]map[string]*ast.FuncDecl,
 	imports map[string]string,
 ) {
 	if regMethod.Body == nil {
@@ -282,7 +287,7 @@ func (ra *routeAnalyzer) extractFromBlock(
 	filePath string,
 	structName string,
 	groupPrefix map[string]string,
-	methods map[string]*ast.FuncDecl,
+	methods map[string]map[string]*ast.FuncDecl,
 	imports map[string]string,
 ) {
 	switch s := stmt.(type) {
@@ -313,7 +318,7 @@ func (ra *routeAnalyzer) extractRouteRegistration(
 	filePath string,
 	structName string,
 	groupPrefix map[string]string,
-	methods map[string]*ast.FuncDecl,
+	methods map[string]map[string]*ast.FuncDecl,
 	imports map[string]string,
 ) {
 	callExpr, ok := expr.(*ast.CallExpr)
@@ -409,34 +414,8 @@ func (ra *routeAnalyzer) extractRouteRegistration(
 
 // ─── Handler function resolution ─────────────────────────────────────────────
 
-func structNameFromFile(filePath string, methods map[string]*ast.FuncDecl) string {
-	// Find any method's receiver struct name.
-	for _, fd := range methods {
-		if fd.Recv == nil || len(fd.Recv.List) == 0 {
-			continue
-		}
-		t := fd.Recv.List[0].Type
-		switch tt := t.(type) {
-		case *ast.StarExpr:
-			if ident, ok := tt.X.(*ast.Ident); ok {
-				return ident.Name
-			}
-		case *ast.Ident:
-			return tt.Name
-		}
-	}
-	return ""
-}
-
-func findHandlerMethod(structName, handlerName string, methods map[string]*ast.FuncDecl) *ast.FuncDecl {
-	fd, ok := methods[handlerName]
-	if !ok {
-		return nil
-	}
-	if !isMethodOfStruct(fd, structName) {
-		return nil
-	}
-	return fd
+func findHandlerMethod(structName, handlerName string, methods map[string]map[string]*ast.FuncDecl) *ast.FuncDecl {
+	return methods[structName][handlerName]
 }
 
 // extractHandlerName extracts a handler from legacy WrapData calls and the

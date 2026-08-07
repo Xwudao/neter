@@ -203,3 +203,63 @@ func writeRouteInfoFixture(t *testing.T, root, name, content string) {
 		t.Fatal(err)
 	}
 }
+
+func TestAnalyzeRoutesHandlesMultipleRouteStructsPerFile(t *testing.T) {
+	root := t.TempDir()
+	writeRouteInfoFixture(t, root, "go.mod", "module example.test/app\n\ngo 1.24\n")
+	// Two route structs in one file. Methods are keyed by receiver struct, so
+	// the second struct must not shadow the first one's Register/handlers.
+	writeRouteInfoFixture(t, root, "api/routes.go", `package api
+
+import (
+    "example.test/app/params"
+    "example.test/core"
+    "github.com/gin-gonic/gin"
+)
+
+type PointsRoute struct { g *gin.RouterGroup }
+type EntertainmentRoute struct { g *gin.RouterGroup }
+
+func (r *PointsRoute) Reg() {
+    group := r.g.Group("/v1/points")
+    group.GET("/leaderboard", core.NoInput(r.leaderboard))
+}
+
+func (r *PointsRoute) leaderboard(c *gin.Context) ([]params.LeaderboardItem, *core.RtnStatus) {
+    return nil, nil
+}
+
+func (r *EntertainmentRoute) Reg() {
+    group := r.g.Group("/auth/v1/entertainment")
+    group.GET("/overview", core.NoInput(r.overview))
+}
+
+func (r *EntertainmentRoute) overview(c *gin.Context) (*params.EntertainmentOverview, *core.RtnStatus) {
+    return nil, nil
+}
+`)
+	writeRouteInfoFixture(t, root, "params/resp.go", `package params
+
+type LeaderboardItem struct { Username string }
+type EntertainmentOverview struct { Balance int64 }
+`)
+
+	routes, err := AnalyzeRoutes(root)
+	if err != nil {
+		t.Fatalf("AnalyzeRoutes() error = %v", err)
+	}
+	if len(routes.Routes) != 2 {
+		t.Fatalf("route count = %d, want 2 (both structs' routes)", len(routes.Routes))
+	}
+
+	got := map[string]string{}
+	for _, r := range routes.Routes {
+		got[r.FullPath] = r.Handler
+	}
+	if got["/v1/points/leaderboard"] != "leaderboard" {
+		t.Fatalf("routes = %#v, want points/leaderboard registered", got)
+	}
+	if got["/auth/v1/entertainment/overview"] != "overview" {
+		t.Fatalf("routes = %#v, want entertainment/overview registered", got)
+	}
+}
