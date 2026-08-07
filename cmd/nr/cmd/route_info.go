@@ -40,11 +40,12 @@ var routeInfoExportCmd = &cobra.Command{
 }
 
 type routeInfoConfig struct {
-	Dir    string
-	Output string
-	Format string
-	Filter string
-	Server string
+	Dir     string
+	Output  string
+	Format  string
+	Filter  string
+	Package string
+	Server  string
 }
 
 func getRouteInfoConfig(cmd *cobra.Command) (*routeInfoConfig, error) {
@@ -60,6 +61,7 @@ func getRouteInfoConfig(cmd *cobra.Command) (*routeInfoConfig, error) {
 	output, _ := cmd.Flags().GetString("output")
 	format, _ := cmd.Flags().GetString("format")
 	filter, _ := cmd.Flags().GetString("filter")
+	pkg, _ := cmd.Flags().GetString("package")
 
 	server, _ := cmd.Flags().GetString("server")
 	// Auto-detect from config.yml if server not explicitly set.
@@ -86,11 +88,12 @@ func getRouteInfoConfig(cmd *cobra.Command) (*routeInfoConfig, error) {
 	format = strings.ToLower(format)
 
 	return &routeInfoConfig{
-		Dir:    dir,
-		Output: output,
-		Format: format,
-		Filter: filter,
-		Server: server,
+		Dir:     dir,
+		Output:  output,
+		Format:  format,
+		Filter:  filter,
+		Package: pkg,
+		Server:  server,
 	}, nil
 }
 
@@ -106,8 +109,11 @@ func runRouteInfo(cmd *cobra.Command) error {
 	}
 
 	// Apply filter
-	if cfg.Filter != "" {
-		projectRoutes = route_info.ApplyFilter(projectRoutes, &route_info.FilterOption{Keyword: cfg.Filter})
+	if cfg.Filter != "" || cfg.Package != "" {
+		projectRoutes = route_info.ApplyFilter(projectRoutes, &route_info.FilterOption{
+			Keyword: cfg.Filter,
+			Package: cfg.Package,
+		})
 	}
 
 	if cfg.Output != "" {
@@ -151,8 +157,11 @@ func runRouteInfoExport(cmd *cobra.Command) error {
 		return fmt.Errorf("analyze routes: %w", err)
 	}
 
-	if cfg.Filter != "" {
-		projectRoutes = route_info.ApplyFilter(projectRoutes, &route_info.FilterOption{Keyword: cfg.Filter})
+	if cfg.Filter != "" || cfg.Package != "" {
+		projectRoutes = route_info.ApplyFilter(projectRoutes, &route_info.FilterOption{
+			Keyword: cfg.Filter,
+			Package: cfg.Package,
+		})
 	}
 
 	if err := writeRouteInfo(projectRoutes, cfg); err != nil {
@@ -231,12 +240,14 @@ func init() {
 	routeInfoCmd.Flags().StringP("output", "o", "", "output file path")
 	routeInfoCmd.Flags().String("format", "", "output format: json, md, curl (default: curl for stdout, auto-detected from --output extension)")
 	routeInfoCmd.Flags().StringP("filter", "f", "", "filter routes by handler name or path (substring match)")
+	routeInfoCmd.Flags().StringP("package", "p", "", "filter routes by route package dir, e.g. v1, app, open")
 	routeInfoCmd.Flags().StringP("server", "s", "http://localhost:8080", "server URL for curl examples")
 
 	routeInfoExportCmd.Flags().StringP("dir", "d", "", "project directory (default: current dir)")
 	routeInfoExportCmd.Flags().StringP("output", "o", "", "output file path")
 	routeInfoExportCmd.Flags().String("format", "", "output format: json, md, curl (auto-detected from --output extension)")
 	routeInfoExportCmd.Flags().StringP("filter", "f", "", "filter routes by handler name or path")
+	routeInfoExportCmd.Flags().StringP("package", "p", "", "filter routes by route package dir, e.g. v1, app, open")
 	routeInfoExportCmd.Flags().StringP("server", "s", "http://localhost:8080", "server URL for curl examples")
 	_ = routeInfoExportCmd.MarkFlagRequired("output")
 
