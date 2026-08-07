@@ -10,6 +10,7 @@ import (
 	"path/filepath"
 	"reflect"
 	"regexp"
+	"slices"
 	"strings"
 )
 
@@ -434,7 +435,8 @@ func extractHandlerName(expr ast.Expr) (string, []ast.Expr) {
 	if !ok {
 		return "", nil
 	}
-	if sel.Sel.Name != "WrapData" && sel.Sel.Name != "JSON" && sel.Sel.Name != "Request" && sel.Sel.Name != "NoInput" {
+	// core.JSON/JSONE, core.Request/RequestE, core.NoInput/NoInputE, core.WithBind, legacy WrapData.
+	if !slices.Contains([]string{"WrapData", "JSON", "JSONE", "Request", "RequestE", "NoInput", "NoInputE", "WithBind"}, sel.Sel.Name) {
 		return "", nil
 	}
 	pkgIdent, ok := sel.X.(*ast.Ident)
