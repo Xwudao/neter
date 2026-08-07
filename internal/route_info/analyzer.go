@@ -398,12 +398,15 @@ func (ra *routeAnalyzer) extractRouteRegistration(
 	handlerFuncDecl := findHandlerMethod(structName, handlerName, methods)
 	if handlerFuncDecl != nil {
 		// Find the inner handler closure and analyze it.
-		innerBody := findInnerHandlerBody(handlerFuncDecl)
-		if innerBody != nil {
-			info.Params = ra.extractParams(innerBody, filePath, imports)
+		innerLit := findInnerHandlerFuncLit(handlerFuncDecl)
+		if innerLit != nil {
+			// Closure signature param (body/request) + in-body binds (query/body/uri).
+		sigParams := ra.extractFuncTypeParams(innerLit.Type, typedRequestSource(callExpr.Args[handlerIndex]), imports)
+			bodyParams := ra.extractParams(innerLit.Body, filePath, imports)
+			info.Params = mergeParamInfos(sigParams, bodyParams)
 			// Build varTypes and pass to extractReturns for field resolution
-			varTypes := ra.buildVarTypeMap(innerBody, filePath, imports)
-			info.Returns = ra.extractReturns(innerBody, varTypes, filePath, imports)
+			varTypes := ra.buildVarTypeMap(innerLit.Body, filePath, imports)
+			info.Returns = ra.extractReturns(innerLit.Body, varTypes, filePath, imports)
 		} else {
 			info.Params, info.Returns = ra.extractTypedHandlerContract(handlerFuncDecl, filePath, imports, typedRequestSource(callExpr.Args[handlerIndex]))
 		}
@@ -491,20 +494,15 @@ func (ra *routeAnalyzer) extractTypedHandlerContract(fd *ast.FuncDecl, filePath 
 	if fd.Type.Params == nil || fd.Type.Results == nil || len(fd.Type.Results.List) == 0 {
 		return nil, nil
 	}
+	// Signature request param (body/request) + in-body binds (query/body/uri),
+	// so dual-binding handlers expose both sides (e.g. body struct + ShouldBindQuery).
 	var params []ParamInfo
-	// The first parameter is Gin context. Any following parameter is the
-	// request contract in the current template.
 	if len(fd.Type.Params.List) > 1 {
-		typeStr := strings.TrimPrefix(exprString(fd.Type.Params.List[1].Type), "*")
-		info := ParamInfo{Source: source, StructType: typeStr}
-		if strings.Contains(typeStr, ".") {
-			parts := strings.SplitN(typeStr, ".", 2)
-			if pkg, ok := imports[parts[0]]; ok {
-				info.Package = pkg
-				info.Fields = ra.resolveStructFields(pkg, parts[1])
-			}
-		}
-		params = append(params, info)
+		params = ra.extractFuncTypeParams(fd.Type, source, imports)
+	}
+	if fd.Body != nil {
+		bodyParams := ra.extractParams(fd.Body, filePath, imports)
+		params = mergeParamInfos(params, bodyParams)
 	}
 	responseType := exprString(fd.Type.Results.List[0].Type)
 	response := ReturnInfo{Type: responseType, Description: "success", Fields: ra.resolveReturnFields(responseType, filePath, imports)}
@@ -529,6 +527,58 @@ func (ra *routeAnalyzer) extractTypedHandlerContract(fd *ast.FuncDecl, filePath 
 	return params, []ReturnInfo{response}
 }
 
+// extractFuncTypeParams extracts the request contract from a function type's
+// second parameter (after *gin.Context).
+func (ra *routeAnalyzer) extractFuncTypeParams(fnType *ast.FuncType, source string, imports map[string]string) []ParamInfo {
+	if fnType == nil || fnType.Params == nil || len(fnType.Params.List) < 2 {
+		return nil
+	}
+	typeStr := strings.TrimPrefix(exprString(fnType.Params.List[1].Type), "*")
+	info := ParamInfo{Source: source, StructType: typeStr}
+	if strings.Contains(typeStr, ".") {
+		parts := strings.SplitN(typeStr, ".", 2)
+		if pkg, ok := imports[parts[0]]; ok {
+			info.Package = pkg
+			info.Fields = ra.resolveStructFieldsFor(imports, parts[0], parts[1])
+		}
+	} else {
+		info.Fields = ra.resolveStructFieldsFor(imports, "", typeStr)
+	}
+	return []ParamInfo{info}
+}
+
+// resolveStructFieldsFor resolves struct fields by package alias + type name.
+// A nil pkgAlias means the type lives in the same package.
+func (ra *routeAnalyzer) resolveStructFieldsFor(imports map[string]string, pkgAlias, typeName string) []FieldInfo {
+	fullPath := ""
+	if pkgAlias != "" {
+		var ok bool
+		fullPath, ok = imports[pkgAlias]
+		if !ok {
+			return nil
+		}
+	}
+	return ra.resolveStructFields(fullPath, typeName)
+}
+
+// mergeParamInfos merges signature params with in-body bind params, deduplicating
+// by source+struct type (signature body + in-body body should not repeat).
+func mergeParamInfos(groups ...[]ParamInfo) []ParamInfo {
+	seen := map[string]bool{}
+	var merged []ParamInfo
+	for _, group := range groups {
+		for _, p := range group {
+			key := p.Source + ":" + p.StructType
+			if seen[key] {
+				continue
+			}
+			seen[key] = true
+			merged = append(merged, p)
+		}
+	}
+	return merged
+}
+
 func isMapResponse(typeName string) bool {
 	return strings.HasPrefix(typeName, "map[")
 }
@@ -545,13 +595,13 @@ func isSliceLiteral(typeName string) bool {
 	return strings.HasPrefix(typeName, "[]")
 }
 
-// findInnerHandlerBody finds the inner closure body from a handler method.
+// findInnerHandlerFuncLit finds the inner closure FuncLit from a handler method.
 // The handler method has signature:
 //
-//	func (r *XxxRoute) handlerName() core.WrappedHandlerFunc {
-//	    return func(c *gin.Context) (any, *core.RtnStatus) { ... }
+//	func (r *XxxRoute) handlerName(isAdmin bool) func(*gin.Context, *params.X) (Resp, *core.RtnStatus) {
+//	    return func(c *gin.Context, pm *params.X) (Resp, *core.RtnStatus) { ... }
 //	}
-func findInnerHandlerBody(fd *ast.FuncDecl) *ast.BlockStmt {
+func findInnerHandlerFuncLit(fd *ast.FuncDecl) *ast.FuncLit {
 	if fd.Body == nil {
 		return nil
 	}
@@ -565,7 +615,7 @@ func findInnerHandlerBody(fd *ast.FuncDecl) *ast.BlockStmt {
 			continue
 		}
 		if funcLit.Body != nil {
-			return funcLit.Body
+			return funcLit
 		}
 	}
 	return nil
