@@ -1,6 +1,7 @@
 package cmd
 
 import (
+	"encoding/json"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -230,6 +231,7 @@ func runRouteInfoGenTS(cmd *cobra.Command) error {
 			return fmt.Errorf("write generated TypeScript file: %w", err)
 		}
 		fmt.Printf("TypeScript contracts written to %s (%d routes)\n", output, len(routes.Routes))
+		checkOxfmtIgnore(output)
 		return nil
 	}
 
@@ -270,6 +272,7 @@ func runRouteInfoGenTSDir(projectDir, outputDir string, routes *route_info.Proje
 		}
 	}
 	fmt.Printf("TypeScript contracts written to %s (%d routes, %d files)\n", outputDir, len(routes.Routes), len(files))
+	checkOxfmtIgnore(outputDir)
 	return nil
 }
 
@@ -334,6 +337,75 @@ func detectServerFromConfig(projectDir string) string {
 	}
 
 	return ""
+}
+
+// checkOxfmtIgnore looks for .oxfmtrc.json in ancestor directories of the
+// output path and warns the user if the generated files are not in the
+// ignorePatterns array.
+func checkOxfmtIgnore(outputPath string) {
+	// Walk up from outputPath looking for .oxfmtrc.json
+	dir := outputPath
+	if info, err := os.Stat(dir); err == nil && !info.IsDir() {
+		dir = filepath.Dir(dir)
+	}
+
+	var oxfmtPath string
+	for {
+		candidate := filepath.Join(dir, ".oxfmtrc.json")
+		if _, err := os.Stat(candidate); err == nil {
+			oxfmtPath = candidate
+			break
+		}
+		parent := filepath.Dir(dir)
+		if parent == dir {
+			break
+		}
+		dir = parent
+	}
+
+	if oxfmtPath == "" {
+		return // no .oxfmtrc.json found, nothing to check
+	}
+
+	data, err := os.ReadFile(oxfmtPath)
+	if err != nil {
+		return
+	}
+
+	var config struct {
+		IgnorePatterns []string `json:"ignorePatterns"`
+	}
+	if err := json.Unmarshal(data, &config); err != nil {
+		return
+	}
+
+	oxfmtDir := filepath.Dir(oxfmtPath)
+
+	// Compute relative path from oxfmtDir to outputPath
+	rel, err := filepath.Rel(oxfmtDir, outputPath)
+	if err != nil {
+		return
+	}
+
+	// Use forward slashes for pattern matching (oxfmt uses forward slashes)
+	rel = filepath.ToSlash(rel)
+
+	// Check if any pattern covers the output path
+	// For directories, try matching rel/*.gen.ts
+	testPath := rel
+	if info, err := os.Stat(outputPath); err == nil && info.IsDir() {
+		testPath = rel + "/*.gen.ts"
+	}
+
+	for _, pattern := range config.IgnorePatterns {
+		if matched, _ := filepath.Match(pattern, testPath); matched {
+			return // covered
+		}
+	}
+
+	// Not covered, print warning
+	fmt.Printf("\n⚠️  Warning: output path %q is not in %s ignorePatterns.\n", rel, oxfmtPath)
+	fmt.Printf("   Consider adding %q (or similar) to ignorePatterns to avoid formatting generated files.\n", rel+"/*")
 }
 
 func init() {
