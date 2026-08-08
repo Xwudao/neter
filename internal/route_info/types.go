@@ -39,6 +39,14 @@ type ReturnInfo struct {
 	Type        string      `json:"type"`                  // Go type of returned data
 	Description string      `json:"description,omitempty"` // contextual info (e.g. "error", "list response", "success")
 	Fields      []FieldInfo `json:"fields,omitempty"`      // struct fields when resolvable
+
+	// ListElementType is the element type argument of a core.ListResponse[T]
+	// return (e.g. "*payloads.ResourceReportItem"). It lets TS generators
+	// emit `data: { list: T[]; total: number }` instead of losing the shape.
+	ListElementType string `json:"list_element_type,omitempty"`
+	// ListElementFields are the resolved fields of the list element struct,
+	// when the element type is resolvable inside the project.
+	ListElementFields []FieldInfo `json:"list_element_fields,omitempty"`
 }
 
 // ProjectRoutes holds all routes extracted from a project.

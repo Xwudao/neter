@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"sort"
 	"strings"
 
 	"github.com/spf13/cobra"
@@ -36,6 +37,15 @@ var routeInfoExportCmd = &cobra.Command{
 	Args:  cobra.NoArgs,
 	Run: func(cmd *cobra.Command, args []string) {
 		utils.CheckErrWithStatus(runRouteInfoExport(cmd))
+	},
+}
+
+var routeInfoGenTSCmd = &cobra.Command{
+	Use:   "gen-ts",
+	Short: "generate TypeScript API contracts from route definitions",
+	Args:  cobra.NoArgs,
+	Run: func(cmd *cobra.Command, args []string) {
+		utils.CheckErrWithStatus(runRouteInfoGenTS(cmd))
 	},
 }
 
@@ -172,6 +182,97 @@ func runRouteInfoExport(cmd *cobra.Command) error {
 	return nil
 }
 
+func runRouteInfoGenTS(cmd *cobra.Command) error {
+	dir, _ := cmd.Flags().GetString("dir")
+	if dir == "" {
+		var err error
+		dir, err = os.Getwd()
+		if err != nil {
+			return fmt.Errorf("get current dir: %w", err)
+		}
+	}
+	output, _ := cmd.Flags().GetString("output")
+	if !filepath.IsAbs(output) {
+		output = filepath.Join(dir, output)
+	}
+	filter, _ := cmd.Flags().GetString("filter")
+	pkg, _ := cmd.Flags().GetString("package")
+	check, _ := cmd.Flags().GetBool("check")
+
+	routes, err := route_info.AnalyzeRoutes(dir)
+	if err != nil {
+		return fmt.Errorf("analyze routes: %w", err)
+	}
+	if filter != "" || pkg != "" {
+		routes = route_info.ApplyFilter(routes, &route_info.FilterOption{Keyword: filter, Package: pkg})
+	}
+
+	// --output ending in .ts keeps the legacy single-file mode; anything else
+	// is treated as a directory of per-route-file *.gen.ts contracts.
+	singleFile := strings.HasSuffix(output, ".ts")
+	if singleFile {
+		generated := route_info.GenerateTypeScript(routes)
+		if check {
+			existing, err := os.ReadFile(output)
+			if err != nil {
+				return fmt.Errorf("read generated TypeScript file: %w", err)
+			}
+			if string(existing) != generated {
+				return fmt.Errorf("generated TypeScript contracts are stale: run nr route-info gen-ts --dir %s --output %s", dir, output)
+			}
+			fmt.Printf("TypeScript contracts are current: %s (%d routes)\n", output, len(routes.Routes))
+			return nil
+		}
+		if err := os.MkdirAll(filepath.Dir(output), 0o755); err != nil {
+			return fmt.Errorf("create output directory: %w", err)
+		}
+		if err := os.WriteFile(output, []byte(generated), 0o644); err != nil {
+			return fmt.Errorf("write generated TypeScript file: %w", err)
+		}
+		fmt.Printf("TypeScript contracts written to %s (%d routes)\n", output, len(routes.Routes))
+		return nil
+	}
+
+	return runRouteInfoGenTSDir(dir, output, routes, check)
+}
+
+// runRouteInfoGenTSDir writes one .gen.ts file per route source file into the
+// output directory, plus a shared _common.gen.ts.
+func runRouteInfoGenTSDir(projectDir, outputDir string, routes *route_info.ProjectRoutes, check bool) error {
+	files := route_info.GenerateTypeScriptFiles(routes)
+
+	names := make([]string, 0, len(files))
+	for name := range files {
+		names = append(names, name)
+	}
+	sort.Strings(names)
+
+	if check {
+		for _, name := range names {
+			existing, err := os.ReadFile(filepath.Join(outputDir, name))
+			if err != nil {
+				return fmt.Errorf("read generated TypeScript file %s: %w", name, err)
+			}
+			if string(existing) != files[name] {
+				return fmt.Errorf("generated TypeScript contracts are stale: run nr route-info gen-ts --dir %s --output %s", projectDir, outputDir)
+			}
+		}
+		fmt.Printf("TypeScript contracts are current: %s (%d routes, %d files)\n", outputDir, len(routes.Routes), len(files))
+		return nil
+	}
+
+	if err := os.MkdirAll(outputDir, 0o755); err != nil {
+		return fmt.Errorf("create output directory: %w", err)
+	}
+	for _, name := range names {
+		if err := os.WriteFile(filepath.Join(outputDir, name), []byte(files[name]), 0o644); err != nil {
+			return fmt.Errorf("write generated TypeScript file %s: %w", name, err)
+		}
+	}
+	fmt.Printf("TypeScript contracts written to %s (%d routes, %d files)\n", outputDir, len(routes.Routes), len(files))
+	return nil
+}
+
 // writeRouteInfo writes routes in the requested format.  Keeping this in one
 // place ensures `route-info` and `route-info export` always behave identically.
 func writeRouteInfo(projectRoutes *route_info.ProjectRoutes, cfg *routeInfoConfig) error {
@@ -251,6 +352,12 @@ func init() {
 	routeInfoExportCmd.Flags().StringP("server", "s", "http://localhost:8080", "server URL for curl examples")
 	_ = routeInfoExportCmd.MarkFlagRequired("output")
 
-	routeInfoCmd.AddCommand(routeInfoExportCmd)
+	routeInfoGenTSCmd.Flags().StringP("dir", "d", "", "project directory (default: current dir)")
+	routeInfoGenTSCmd.Flags().StringP("output", "o", "web/src/api/generated", "output path: a directory writes per-route-file *.gen.ts contracts; a path ending in .ts writes a single file")
+	routeInfoGenTSCmd.Flags().StringP("filter", "f", "", "filter routes by handler name or path")
+	routeInfoGenTSCmd.Flags().StringP("package", "p", "", "filter routes by route package dir, e.g. v1, app, open")
+	routeInfoGenTSCmd.Flags().Bool("check", false, "fail if the generated files are missing or stale")
+
+	routeInfoCmd.AddCommand(routeInfoExportCmd, routeInfoGenTSCmd)
 	rootCmd.AddCommand(routeInfoCmd)
 }

@@ -184,6 +184,51 @@ func (r *StatusRoute) items(c *gin.Context) ([]gin.H, *core.RtnStatus) {
 	}
 }
 
+func TestAnalyzeRoutesStopsAtRecursiveStructs(t *testing.T) {
+	root := t.TempDir()
+	writeRouteInfoFixture(t, root, "go.mod", "module example.test/app\n\ngo 1.24\n")
+	writeRouteInfoFixture(t, root, "api/tree_route.go", `package api
+
+import (
+    "example.test/app/params"
+    "example.test/core"
+    "github.com/gin-gonic/gin"
+)
+
+type TreeRoute struct { g *gin.RouterGroup }
+
+func (r *TreeRoute) Reg() {
+    r.g.POST("/trees", core.JSON(r.create))
+}
+
+func (r *TreeRoute) create(c *gin.Context, input *params.Tree) (*params.Tree, *core.RtnStatus) {
+    return input, nil
+}
+`)
+	writeRouteInfoFixture(t, root, "params/tree.go", `package params
+
+type Tree struct {
+    Name string `+"`json:\"name\"`"+`
+    Child *Tree `+"`json:\"child,omitempty\"`"+`
+}
+`)
+
+	routes, err := AnalyzeRoutes(root)
+	if err != nil {
+		t.Fatalf("AnalyzeRoutes() error = %v", err)
+	}
+	if len(routes.Routes) != 1 || len(routes.Routes[0].Params) != 1 {
+		t.Fatalf("routes = %#v", routes)
+	}
+	fields := routes.Routes[0].Params[0].Fields
+	if len(fields) != 2 || fields[0].Name != "Name" || fields[1].Name != "Child" {
+		t.Fatalf("recursive fields = %#v", fields)
+	}
+	if len(fields[1].Fields) != 2 || len(fields[1].Fields[1].Fields) != 0 {
+		t.Fatalf("recursive expansion should stop after one child level, got %#v", fields[1])
+	}
+}
+
 func hasParam(params []ParamInfo, source, key, structType string) bool {
 	for _, p := range params {
 		if p.Source == source && p.Key == key && p.StructType == structType {

@@ -12,6 +12,7 @@ import (
 	"regexp"
 	"slices"
 	"strings"
+	"unicode"
 )
 
 // ─── Main entry point ────────────────────────────────────────────────────────
@@ -20,12 +21,13 @@ import (
 // HTTP route information by parsing Gin route registration patterns.
 func AnalyzeRoutes(projectRoot string) (*ProjectRoutes, error) {
 	ra := &routeAnalyzer{
-		projectRoot:    projectRoot,
-		importMapCache: map[string]map[string]string{},
-		parsedCache:    map[string]*ast.File{},
-		structCache:    map[string][]FieldInfo{},
-		groupMapCache:  map[string]string{},
-		resolvingTypes: map[string]bool{},
+		projectRoot:     projectRoot,
+		importMapCache:  map[string]map[string]string{},
+		parsedCache:     map[string]*ast.File{},
+		structCache:     map[string][]FieldInfo{},
+		unresolvedTypes: map[string]bool{},
+		groupMapCache:   map[string]string{},
+		resolvingTypes:  map[string]bool{},
 	}
 
 	modName, err := readModuleName(projectRoot)
@@ -57,6 +59,8 @@ type routeAnalyzer struct {
 	parsedCache map[string]*ast.File
 	// cache: "fullPkgPath.StructName" → fields
 	structCache map[string][]FieldInfo
+	// cache: types that were searched for but not found
+	unresolvedTypes map[string]bool
 	// cache: file path → group var name → group prefix
 	groupMapCache map[string]string
 	// guard: set of cacheKey being resolved (prevents circular recursion)
@@ -112,7 +116,6 @@ func (ra *routeAnalyzer) analyzeFile(filePath string) error {
 	if err != nil {
 		return fmt.Errorf("parse: %w", err)
 	}
-
 	// Build import map for this file.
 	imports := buildImportMap(f)
 	ra.importMapCache[filePath] = imports
@@ -137,6 +140,10 @@ func (ra *routeAnalyzer) analyzeFile(filePath string) error {
 	if len(routeStructs) == 0 {
 		return nil // not a route file
 	}
+	// Same-package response types live beside route registration methods. Cache
+	// route files only: caching the whole project makes nested resolution scan
+	// generated Ent and unrelated files for every field.
+	ra.parsedCache[filePath] = f
 
 	// Collect all method declarations keyed by receiver struct name, so
 	// files containing multiple route structs (e.g. PointsRoute + EntertainmentRoute)
@@ -402,7 +409,7 @@ func (ra *routeAnalyzer) extractRouteRegistration(
 		innerLit := findInnerHandlerFuncLit(handlerFuncDecl)
 		if innerLit != nil {
 			// Closure signature param (body/request) + in-body binds (query/body/uri).
-		sigParams := ra.extractFuncTypeParams(innerLit.Type, typedRequestSource(callExpr.Args[handlerIndex]), imports)
+			sigParams := ra.extractFuncTypeParams(innerLit.Type, typedRequestSource(callExpr.Args[handlerIndex]), imports)
 			bodyParams := ra.extractParams(innerLit.Body, filePath, imports)
 			info.Params = mergeParamInfos(sigParams, bodyParams)
 			// Build varTypes and pass to extractReturns for field resolution
@@ -483,10 +490,12 @@ func typedRequestSource(expr ast.Expr) string {
 		return "request"
 	}
 	switch sel.Sel.Name {
-	case "JSON":
+	case "JSON", "JSONE":
 		return "body"
-	case "Request":
+	case "Request", "RequestE", "WithBind":
 		return "request"
+	case "NoInput", "NoInputE":
+		return ""
 	default:
 		return "request"
 	}
@@ -508,10 +517,18 @@ func (ra *routeAnalyzer) extractTypedHandlerContract(fd *ast.FuncDecl, filePath 
 	}
 	responseType := exprString(fd.Type.Results.List[0].Type)
 	response := ReturnInfo{Type: responseType, Description: "success", Fields: ra.resolveReturnFields(responseType, filePath, imports)}
+	// core.ListResponse[T] is the standard paginated-list contract. Resolve the
+	// element type so TS generators can emit `data: { list: T[]; total: number }`
+	// instead of falling back to variable-name fields from inline literals.
+	if elemType, ok := listResponseElement(responseType); ok {
+		response.ListElementType = elemType
+		response.ListElementFields = ra.resolveResponseElement(elemType, imports)
+		response.Fields = nil
+	}
 	// Typed handlers expose the response type in their signature. For map-like
 	// responses such as gin.H, the signature alone cannot describe its shape,
 	// so retain keys and value types from an inline success literal.
-	if fd.Body != nil {
+	if fd.Body != nil && response.ListElementType == "" {
 		ast.Inspect(fd.Body, func(node ast.Node) bool {
 			ret, ok := node.(*ast.ReturnStmt)
 			if !ok || len(ret.Results) == 0 {
@@ -519,7 +536,10 @@ func (ra *routeAnalyzer) extractTypedHandlerContract(fd *ast.FuncDecl, filePath 
 			}
 			if literal, ok := ret.Results[0].(*ast.CompositeLit); ok {
 				info := ra.returnInfoFromExpr(literal, nil, filePath, imports, "success")
-				if (info.Type == responseType || (isMapResponse(responseType) && isMapLiteral(info.Type)) || (isSliceResponse(responseType) && isSliceLiteral(info.Type))) && len(info.Fields) > 0 {
+				// A named response struct is already resolved from its declaration.
+				// Do not replace those fields with keys from a return composite literal:
+				// the latter describes Go struct field names, not their declared types.
+				if ((isMapResponse(responseType) && isMapLiteral(info.Type)) || (isSliceResponse(responseType) && isSliceLiteral(info.Type))) && len(info.Fields) > 0 {
 					response.Fields = info.Fields
 				}
 			}
@@ -527,6 +547,32 @@ func (ra *routeAnalyzer) extractTypedHandlerContract(fd *ast.FuncDecl, filePath 
 		})
 	}
 	return params, []ReturnInfo{response}
+}
+
+// listResponseElement extracts the element type argument from a
+// core.ListResponse[T] type string, e.g. "*payloads.ResourceReportItem".
+func listResponseElement(typeStr string) (string, bool) {
+	m := listResponseElemRE.FindStringSubmatch(typeStr)
+	if len(m) != 2 || strings.TrimSpace(m[1]) == "" {
+		return "", false
+	}
+	return m[1], true
+}
+
+// resolveResponseElement resolves the element struct fields of a ListResponse
+// element type, using the route file's import aliases.
+func (ra *routeAnalyzer) resolveResponseElement(elemType string, imports map[string]string) []FieldInfo {
+	clean := strings.TrimLeft(elemType, "*")
+	if after, ok := strings.CutPrefix(clean, "[]"); ok {
+		clean = strings.TrimLeft(after, "*")
+	}
+	if strings.Contains(clean, ".") {
+		parts := strings.SplitN(clean, ".", 2)
+		if fullPath, ok := imports[parts[0]]; ok {
+			return ra.resolveStructFields(fullPath, parts[1])
+		}
+	}
+	return ra.resolveStructFields("", clean)
 }
 
 // extractFuncTypeParams extracts the request contract from a function type's
@@ -1083,6 +1129,9 @@ func (ra *routeAnalyzer) resolveStructFields(fullPkgPath, typeName string) []Fie
 	if fields, ok := ra.structCache[cacheKey]; ok {
 		return fields
 	}
+	if ra.unresolvedTypes[cacheKey] {
+		return nil
+	}
 	// Guard: prevent re-entering resolution for the same type (circular refs).
 	if ra.resolvingTypes[cacheKey] {
 		return nil
@@ -1095,14 +1144,16 @@ func (ra *routeAnalyzer) resolveStructFields(fullPkgPath, typeName string) []Fie
 	if fullPkgPath == "" || fullPkgPath == ra.moduleName {
 		// Same package or root module — search in already-parsed files.
 		// We'll need to check all parsed files for the type.
-		for _, pf := range ra.parsedCache {
+		for _, cached := range ra.cachedFilesSnapshot() {
+			fp, pf := cached.path, cached.file
 			pkg := pf.Name.Name
-			if typeFields := ra.findStructInFile(pf, typeName); typeFields != nil {
+			if typeFields := ra.findStructInFile(fp, pf, typeName); typeFields != nil {
 				ra.structCache[cacheKey] = typeFields
 				ra.structCache[pkg+"."+typeName] = typeFields
 				return typeFields
 			}
 		}
+		ra.unresolvedTypes[cacheKey] = true
 		return nil
 	}
 
@@ -1139,16 +1190,35 @@ func (ra *routeAnalyzer) resolveStructFields(fullPkgPath, typeName string) []Fie
 		}
 		ra.parsedCache[fp] = pf
 
-		if fields := ra.findStructInFile(pf, typeName); fields != nil {
+		if fields := ra.findStructInFile(fp, pf, typeName); fields != nil {
 			ra.structCache[cacheKey] = fields
 			return fields
 		}
 	}
 
+	ra.unresolvedTypes[cacheKey] = true
 	return nil
 }
 
-func (ra *routeAnalyzer) findStructInFile(f *ast.File, typeName string) []FieldInfo {
+type cachedFile struct {
+	path string
+	file *ast.File
+}
+
+// cachedFilesSnapshot prevents a type lookup from ranging over parsedCache
+// while another nested lookup extends it by parsing a local package.
+func (ra *routeAnalyzer) cachedFilesSnapshot() []cachedFile {
+	files := make([]cachedFile, 0, len(ra.parsedCache))
+	for path, file := range ra.parsedCache {
+		files = append(files, cachedFile{path: path, file: file})
+	}
+	slices.SortFunc(files, func(a, b cachedFile) int {
+		return strings.Compare(a.path, b.path)
+	})
+	return files
+}
+
+func (ra *routeAnalyzer) findStructInFile(fp string, f *ast.File, typeName string) []FieldInfo {
 	for _, decl := range f.Decls {
 		gd, ok := decl.(*ast.GenDecl)
 		if !ok {
@@ -1163,23 +1233,107 @@ func (ra *routeAnalyzer) findStructInFile(f *ast.File, typeName string) []FieldI
 			if !ok {
 				continue
 			}
-			return ra.extractFieldsFromStruct(st)
+			return ra.extractFieldsFromStruct(st, func(nested string) []FieldInfo {
+				return ra.resolveEmbeddedType(fp, nested)
+			})
 		}
 	}
 	return nil
 }
 
-func (ra *routeAnalyzer) extractFieldsFromStruct(st *ast.StructType) []FieldInfo {
+// resolveEmbeddedType resolves an embedded struct type relative to the package
+// directory of the anchor file. Resolution is bounded to that single directory
+// and guarded against cycles (mutually embedded structs), so expanding embedded
+// structs cannot trigger full-project scans or infinite recursion once every
+// route file is cached in parsedCache.
+func (ra *routeAnalyzer) resolveEmbeddedType(anchorPath, typeName string) []FieldInfo {
+	// Qualified embedded type (e.g. *ent.Tag): resolve via the anchor file's
+	// import aliases, mirroring how named-field types are resolved.
+	if strings.Contains(typeName, ".") {
+		parts := strings.SplitN(typeName, ".", 2)
+		if pf, ok := ra.parsedCache[anchorPath]; ok {
+			if fullPath, ok := buildImportMap(pf)[parts[0]]; ok {
+				return ra.resolveStructFields(fullPath, parts[1])
+			}
+		}
+		return nil
+	}
+	dir := filepath.Dir(anchorPath)
+	cacheKey := dir + "." + typeName
+	if fields, ok := ra.structCache[cacheKey]; ok {
+		return fields
+	}
+	if ra.resolvingTypes[cacheKey] {
+		return nil
+	}
+	ra.resolvingTypes[cacheKey] = true
+	defer delete(ra.resolvingTypes, cacheKey)
+
+	entries, err := os.ReadDir(dir)
+	if err != nil {
+		return nil
+	}
+	for _, entry := range entries {
+		if entry.IsDir() || !strings.HasSuffix(entry.Name(), ".go") {
+			continue
+		}
+		fp := filepath.Join(dir, entry.Name())
+		pf, ok := ra.parsedCache[fp]
+		if !ok {
+			fset := token.NewFileSet()
+			pf, err = parser.ParseFile(fset, fp, nil, parser.ParseComments)
+			if err != nil {
+				continue
+			}
+			ra.parsedCache[fp] = pf
+		}
+		if fields := ra.findStructInFile(fp, pf, typeName); fields != nil {
+			ra.structCache[cacheKey] = fields
+			return fields
+		}
+	}
+	ra.structCache[cacheKey] = nil
+	return nil
+}
+
+func (ra *routeAnalyzer) extractFieldsFromStruct(st *ast.StructType, embeddedResolver func(string) []FieldInfo) []FieldInfo {
 	if st.Fields == nil {
 		return nil
 	}
 	var fields []FieldInfo
 	for _, f := range st.Fields.List {
 		if len(f.Names) == 0 {
-			// Embedded field — skip.
+			// Embedded struct — expand its fields inline so generated TS
+			// interfaces stay flat (e.g. UpdateCategoryParams embedding
+			// CreateCategoryParams inherits its fields). Fields tagged
+			// json:"-" never serialize, so skip them entirely (Ent's
+			// `config` embedded struct is the main offender).
+			tagRaw := ""
+			if f.Tag != nil {
+				tagRaw = strings.Trim(f.Tag.Value, "`")
+			}
+			if jsonTagName(tagRaw, "") == "-" {
+				continue
+			}
+			if embeddedResolver != nil {
+				typeStr := exprString(f.Type)
+				nestedType := strings.TrimLeft(typeStr, "*")
+				if after, ok := strings.CutPrefix(typeStr, "[]"); ok {
+					nestedType = after
+				}
+				nestedType = strings.TrimLeft(nestedType, "*")
+				if childFields := embeddedResolver(nestedType); childFields != nil {
+					fields = append(fields, childFields...)
+				}
+			}
 			continue
 		}
 		for _, name := range f.Names {
+			// Unexported fields never serialize to JSON; skip them (Ent's
+			// selectValues/loadedTypes are the main offenders).
+			if name.Name != "" && unicode.IsLower(rune(name.Name[0])) {
+				continue
+			}
 			typeStr := exprString(f.Type)
 			fi := FieldInfo{
 				Name: name.Name,
@@ -1214,6 +1368,20 @@ func (ra *routeAnalyzer) extractFieldsFromStruct(st *ast.StructType) []FieldInfo
 	return fields
 }
 
+// isEntPackage reports whether a Go package path points into a generated Ent
+// entity tree (e.g. .../internal/data/ent or its /user subpackage).
+func isEntPackage(fullPkgPath string) bool {
+	if fullPkgPath == "" {
+		return false
+	}
+	for _, part := range strings.Split(fullPkgPath, "/") {
+		if part == "ent" {
+			return true
+		}
+	}
+	return false
+}
+
 // bindingTagRequired reports whether the Gin binding rule list contains the
 // required rule. Binding tags frequently include additional validators, e.g.
 // binding:"required,alphanum,min=6", so an exact tag match is insufficient.
@@ -1237,7 +1405,8 @@ func (ra *routeAnalyzer) resolveNestedTypeName(typeName string) []FieldInfo {
 	structName := parts[1]
 
 	// Search through all parsed files' import maps.
-	for _, pf := range ra.parsedCache {
+	for _, cached := range ra.cachedFilesSnapshot() {
+		pf := cached.file
 		imports := buildImportMap(pf)
 		if fullPath, ok := imports[pkgAlias]; ok {
 			if fields := ra.resolveStructFields(fullPath, structName); fields != nil {
@@ -1259,6 +1428,10 @@ func (ra *routeAnalyzer) resolveNestedTypeName(typeName string) []FieldInfo {
 }
 
 // ─── Utility helpers ─────────────────────────────────────────────────────────
+
+// listResponseElemRE matches the element type inside core.ListResponse[T],
+// tolerating the fully-qualified package path.
+var listResponseElemRE = regexp.MustCompile(`ListResponse\[(.+)\]$`)
 
 // isHTTPMethod returns true if the string is an HTTP method.
 func isHTTPMethod(s string) bool {
@@ -1383,6 +1556,8 @@ func exprString(expr ast.Expr) string {
 		return "*" + exprString(e.X)
 	case *ast.SelectorExpr:
 		return exprString(e.X) + "." + e.Sel.Name
+	case *ast.IndexExpr:
+		return exprString(e.X) + "[" + exprString(e.Index) + "]"
 	case *ast.ArrayType:
 		if e.Len == nil {
 			return "[]" + exprString(e.Elt)
