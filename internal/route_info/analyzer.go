@@ -1147,7 +1147,7 @@ func (ra *routeAnalyzer) resolveStructFields(fullPkgPath, typeName string) []Fie
 		for _, cached := range ra.cachedFilesSnapshot() {
 			fp, pf := cached.path, cached.file
 			pkg := pf.Name.Name
-			if typeFields := ra.findStructInFile(fp, pf, typeName); typeFields != nil {
+			if typeFields := ra.findStructInFile(fp, pf, typeName, isEntPackage(fullPkgPath)); typeFields != nil {
 				ra.structCache[cacheKey] = typeFields
 				ra.structCache[pkg+"."+typeName] = typeFields
 				return typeFields
@@ -1190,7 +1190,7 @@ func (ra *routeAnalyzer) resolveStructFields(fullPkgPath, typeName string) []Fie
 		}
 		ra.parsedCache[fp] = pf
 
-		if fields := ra.findStructInFile(fp, pf, typeName); fields != nil {
+		if fields := ra.findStructInFile(fp, pf, typeName, isEntPackage(fullPkgPath)); fields != nil {
 			ra.structCache[cacheKey] = fields
 			return fields
 		}
@@ -1218,7 +1218,7 @@ func (ra *routeAnalyzer) cachedFilesSnapshot() []cachedFile {
 	return files
 }
 
-func (ra *routeAnalyzer) findStructInFile(fp string, f *ast.File, typeName string) []FieldInfo {
+func (ra *routeAnalyzer) findStructInFile(fp string, f *ast.File, typeName string, fromEnt bool) []FieldInfo {
 	for _, decl := range f.Decls {
 		gd, ok := decl.(*ast.GenDecl)
 		if !ok {
@@ -1235,7 +1235,7 @@ func (ra *routeAnalyzer) findStructInFile(fp string, f *ast.File, typeName strin
 			}
 			return ra.extractFieldsFromStruct(st, func(nested string) []FieldInfo {
 				return ra.resolveEmbeddedType(fp, nested)
-			})
+			}, fromEnt)
 		}
 	}
 	return nil
@@ -1287,7 +1287,7 @@ func (ra *routeAnalyzer) resolveEmbeddedType(anchorPath, typeName string) []Fiel
 			}
 			ra.parsedCache[fp] = pf
 		}
-		if fields := ra.findStructInFile(fp, pf, typeName); fields != nil {
+		if fields := ra.findStructInFile(fp, pf, typeName, false); fields != nil {
 			ra.structCache[cacheKey] = fields
 			return fields
 		}
@@ -1296,7 +1296,7 @@ func (ra *routeAnalyzer) resolveEmbeddedType(anchorPath, typeName string) []Fiel
 	return nil
 }
 
-func (ra *routeAnalyzer) extractFieldsFromStruct(st *ast.StructType, embeddedResolver func(string) []FieldInfo) []FieldInfo {
+func (ra *routeAnalyzer) extractFieldsFromStruct(st *ast.StructType, embeddedResolver func(string) []FieldInfo, fromEnt bool) []FieldInfo {
 	if st.Fields == nil {
 		return nil
 	}
@@ -1336,8 +1336,9 @@ func (ra *routeAnalyzer) extractFieldsFromStruct(st *ast.StructType, embeddedRes
 			}
 			typeStr := exprString(f.Type)
 			fi := FieldInfo{
-				Name: name.Name,
-				Type: typeStr,
+				Name:    name.Name,
+				Type:    typeStr,
+				FromEnt: fromEnt,
 			}
 			if f.Tag != nil {
 				tagRaw := strings.Trim(f.Tag.Value, "`")
@@ -1361,11 +1362,23 @@ func (ra *routeAnalyzer) extractFieldsFromStruct(st *ast.StructType, embeddedRes
 
 			if childFields := ra.resolveNestedTypeName(nestedType); childFields != nil {
 				fi.Fields = childFields
+				if fromEnt {
+					fi.Fields = markFieldsFromEnt(fi.Fields)
+				}
 			}
 			fields = append(fields, fi)
 		}
 	}
 	return fields
+}
+
+func markFieldsFromEnt(fields []FieldInfo) []FieldInfo {
+	marked := slices.Clone(fields)
+	for i := range marked {
+		marked[i].FromEnt = true
+		marked[i].Fields = markFieldsFromEnt(marked[i].Fields)
+	}
+	return marked
 }
 
 // isEntPackage reports whether a Go package path points into a generated Ent

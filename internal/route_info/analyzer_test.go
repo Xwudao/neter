@@ -3,6 +3,7 @@ package route_info
 import (
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 )
 
@@ -226,6 +227,50 @@ type Tree struct {
 	}
 	if len(fields[1].Fields) != 2 || len(fields[1].Fields[1].Fields) != 0 {
 		t.Fatalf("recursive expansion should stop after one child level, got %#v", fields[1])
+	}
+}
+
+func TestAnalyzeRoutesMarksEntResponseFields(t *testing.T) {
+	root := t.TempDir()
+	writeRouteInfoFixture(t, root, "go.mod", "module example.test/app\n\ngo 1.24\n")
+	writeRouteInfoFixture(t, root, "api/user_route.go", `package api
+
+import (
+    "example.test/app/ent"
+    "example.test/core"
+    "github.com/gin-gonic/gin"
+)
+
+type UserRoute struct { g *gin.RouterGroup }
+
+func (r *UserRoute) Reg() { r.g.GET("/users/:id", core.JSON(r.get)) }
+
+func (r *UserRoute) get(c *gin.Context) (*ent.User, *core.RtnStatus) { return nil, nil }
+`)
+	writeRouteInfoFixture(t, root, "ent/user.go", `package ent
+
+type config struct{}
+
+type User struct {
+    config `+"`json:\"-\"`"+`
+    ID int `+"`json:\"id,omitempty\"`"+`
+    Nickname string `+"`json:\"nickname,omitempty\"`"+`
+}
+`)
+
+	routes, err := AnalyzeRoutes(root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	fields := routes.Routes[0].Returns[0].Fields
+	if len(fields) != 2 || !fields[0].FromEnt || !fields[1].FromEnt {
+		t.Fatalf("Ent response fields = %#v, want FromEnt fields", fields)
+	}
+	generated := GenerateTypeScript(routes)
+	for _, want := range []string{"id: number", "nickname: string"} {
+		if !strings.Contains(generated, want) {
+			t.Fatalf("generated TypeScript missing %q:\n%s", want, generated)
+		}
 	}
 }
 

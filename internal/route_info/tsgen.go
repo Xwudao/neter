@@ -207,12 +207,13 @@ func writeInterface(b *strings.Builder, name string, fields []FieldInfo, request
 		// Request fields are optional unless the backend enforces
 		// binding:"required" — omitting a non-required field binds its zero
 		// value instead of failing. Response fields are optional when the
-		// backend can omit them (omitempty or pointer).
+		// backend can omit them (omitempty or pointer). Ent-generated models
+		// use omitempty by default, so it does not express API optionality.
 		optional := fieldRequired(field)
 		if request {
 			optional = !optional
 		} else {
-			optional = !optional && (strings.HasPrefix(field.Type, "*") || hasOmitEmpty(field.Tag))
+			optional = !optional && (strings.HasPrefix(field.Type, "*") || (!field.FromEnt && hasOmitEmpty(field.Tag)))
 		}
 		marker := ""
 		if optional {

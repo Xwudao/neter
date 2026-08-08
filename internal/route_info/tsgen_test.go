@@ -34,6 +34,19 @@ func TestGenerateTypeScript(t *testing.T) {
 			}},
 			Returns: []ReturnInfo{{Type: "[]string"}},
 		},
+		{
+			Method:   "GET",
+			FullPath: "/v1/users/:id",
+			Returns: []ReturnInfo{{
+				Type: "ent.User",
+				Fields: []FieldInfo{
+					{Name: "ID", Type: "int", Tag: `json:"id,omitempty"`, FromEnt: true},
+					{Name: "Nickname", Type: "string", Tag: `json:"nickname,omitempty"`, FromEnt: true},
+					{Name: "Bio", Type: "*string", Tag: `json:"bio,omitempty"`, FromEnt: true},
+					{Name: "Cursor", Type: "string", Tag: `json:"cursor,omitempty"`},
+				},
+			}},
+		},
 	}}
 
 	got := GenerateTypeScript(routes)
@@ -46,9 +59,18 @@ func TestGenerateTypeScript(t *testing.T) {
 		"export interface GetAdminV1ItemsQuery",
 		"page?: number",
 		"export type GetAdminV1ItemsResponse = ApiResponse<Array<string>>",
+		"id: number",
+		"nickname: string",
+		"bio?: string | null",
+		"cursor?: string",
 	} {
 		if !strings.Contains(got, want) {
 			t.Fatalf("generated TypeScript missing %q:\n%s", want, got)
+		}
+	}
+	for _, unwanted := range []string{"id?: number", "nickname?: string"} {
+		if strings.Contains(got, unwanted) {
+			t.Fatalf("generated TypeScript unexpectedly made Ent field optional %q:\n%s", unwanted, got)
 		}
 	}
 }

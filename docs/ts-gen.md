@@ -48,7 +48,8 @@ export type GetV1CategoryListResponse = ApiResponse<Array<GetV1CategoryListRespo
   - 请求字段可选 = 后端未标 `binding:"required"`（省略时绑定零值，不会报错）
 - 响应：`{Method}{Path}Response = ApiResponse<T>`；`core.ListResponse[T]` →
   `{ list: Array<T>; total: number }`；`EmptyResponse` → `null`
-- 响应字段可选 = `omitempty` 或指针
+- 响应字段可选 = `omitempty` 或指针；但 `ent.X` 的代码生成字段默认带
+  `omitempty`，会视为实体序列化实现细节，不会因此生成 `?`
 
 ## 类型映射
 
@@ -87,8 +88,8 @@ const postApiCreateCategory = (payload: PostAdminV1CategoryCreateBody) => {
 
 3. 需要补充的少量定义放在 API 模块里（生成器保持"类型只读"）：
 
-   - **共享模型**：响应元素是 ent 实体展开时字段全可选，登录态等必然完整的模型
-     可补充强类型（如 `IUserRtn`），API 层用 `ApiResponse<补充模型>` 作为返回类型
+   - **共享模型**：若业务接口仅返回 Ent 字段的裁剪子集，仍可补充强类型
+     （如 `IUserRtn`）；完整 `ent.X` 展开的非指针字段会直接生成为必填字段
    - **query 宽松输入**：后端 query 字段都是 string，前端常用 number 传参，
      补充 `{ id?: number | string }` 之类的输入类型
    - **枚举联合**：未解析枚举是 `unknown`，可按业务补充字面量联合

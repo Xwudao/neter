@@ -32,6 +32,9 @@ type FieldInfo struct {
 	Tag      string      `json:"tag,omitempty"`      // struct tag (json/form/binding)
 	Required bool        `json:"required,omitempty"` // whether binding:"required" is set
 	Fields   []FieldInfo `json:"fields,omitempty"`   // nested struct fields
+	// FromEnt distinguishes Ent's generated serialization tags from API
+	// optionality. Ent emits omitempty on most entity fields by default.
+	FromEnt bool `json:"-"`
 }
 
 // ReturnInfo describes a return value from a handler.
