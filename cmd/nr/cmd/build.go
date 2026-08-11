@@ -126,7 +126,8 @@ var buildCmd = &cobra.Command{
 		if web {
 			webStart := time.Now()
 			logCommandPhaseStart("web", "build web", webStart)
-			checkErr(buildWebAssets(pm))
+			webDir, resolvedPm := resolveFrontendOptions(pm, cmd.Flags().Changed("pm"))
+			checkErr(buildWebAssets(webDir, resolvedPm))
 			logCommandPhaseDone("web", "build web", webStart, time.Now())
 		}
 
@@ -243,7 +244,8 @@ var buildCmd = &cobra.Command{
 		if html {
 			logCommandStep("build", "packing web template archive")
 			root, _ := os.Getwd()
-			bh := core.NewBuildHtml(root, buildAppName)
+			webDir, _ := resolveFrontendOptions(pm, cmd.Flags().Changed("pm"))
+			bh := core.NewBuildHtml(root, buildAppName, webDir)
 			err := bh.Check()
 			utils.CheckErrWithStatus(err)
 			err = bh.Copy()

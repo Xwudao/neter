@@ -7,6 +7,7 @@
 
 ```sh
 # 在项目根目录执行（Go 后端 + web/ 前端）
+# 默认输出目录为 <frontend dir>/src/api/generated，frontend dir 取 neter.yml 的 dev.frontend.dir（默认 web）
 nr route-info gen-ts --dir .
 
 # 指定输出目录（默认 web/src/api/generated）

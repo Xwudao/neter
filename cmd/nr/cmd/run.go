@@ -77,7 +77,8 @@ var runCmd = &cobra.Command{
 
 		// build web
 		if web {
-			checkErr(buildWebAssets(pm))
+			webDir, resolvedPm := resolveFrontendOptions(pm, cmd.Flags().Changed("pm"))
+			checkErr(buildWebAssets(webDir, resolvedPm))
 		}
 
 		// generate app

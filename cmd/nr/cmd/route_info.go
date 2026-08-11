@@ -193,6 +193,12 @@ func runRouteInfoGenTS(cmd *cobra.Command) error {
 		}
 	}
 	output, _ := cmd.Flags().GetString("output")
+	if !cmd.Flags().Changed("output") {
+		// Default output follows the configured frontend directory
+		// (neter.yml dev.frontend.dir, default "web").
+		webDir, _ := resolveFrontendOptions("", false)
+		output = filepath.Join(webDir, "src", "api", "generated")
+	}
 	if !filepath.IsAbs(output) {
 		output = filepath.Join(dir, output)
 	}

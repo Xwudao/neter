@@ -125,9 +125,31 @@ func scanCommandDirs(dir string, rootDir string) (map[string]string, error) {
 	return cmdPaths, err
 }
 
-func buildWebAssets(pm string) error {
-	logCommandStep("web", "building web assets with %s", pm)
-	b := core.NewBuildWeb(pm)
+// resolveFrontendOptions resolves the frontend build directory and package
+// manager. The web directory defaults to "web" and can be overridden via
+// neter.yml dev.frontend.dir; the pm flag, when explicitly passed, takes
+// precedence over dev.frontend.pm.
+func resolveFrontendOptions(pm string, pmChanged bool) (webDir, resolvedPm string) {
+	webDir = "web"
+	resolvedPm = pm
+
+	cfg, err := core.LoadOptionalNeterConfig()
+	if err != nil || cfg == nil {
+		return webDir, resolvedPm
+	}
+	devCfg := cfg.EffectiveDevConfig()
+	if devCfg.Frontend.Dir != "" {
+		webDir = devCfg.Frontend.Dir
+	}
+	if !pmChanged && devCfg.Frontend.Pm != "" {
+		resolvedPm = devCfg.Frontend.Pm
+	}
+	return webDir, resolvedPm
+}
+
+func buildWebAssets(webDir, pm string) error {
+	logCommandStep("web", "building web assets with %s (dir=%s)", pm, webDir)
+	b := core.NewBuildWeb(webDir, pm)
 	if err := b.Check(); err != nil {
 		return err
 	}

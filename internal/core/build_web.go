@@ -18,9 +18,12 @@ type BuildWeb struct {
 	pm string // package manager
 }
 
-func NewBuildWeb(pm string) *BuildWeb {
+func NewBuildWeb(webDir, pm string) *BuildWeb {
+	if webDir == "" {
+		webDir = "web"
+	}
 	return &BuildWeb{
-		webDir:    "./web/",
+		webDir:    webDir,
 		assetsDir: "./assets/",
 		pm:        pm,
 	}
@@ -52,7 +55,7 @@ func (b *BuildWeb) Build() error {
 	return nil
 }
 
-// Copy synchronises the generated web/dist/ to ./assets/dist/.
+// Copy synchronises the generated <webDir>/dist/ to ./assets/dist/.
 // Only changed/new files are copied, and stale files in assets/dist/ are removed.
 func (b *BuildWeb) Copy() error {
 	src := filepath.Join(b.frontRoot, "dist")

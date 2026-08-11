@@ -19,13 +19,16 @@ type BuildHtml struct {
 	appName []string
 }
 
-func NewBuildHtml(rootDir string, appName []string) *BuildHtml {
+func NewBuildHtml(rootDir string, appName []string, webDir string) *BuildHtml {
+	if webDir == "" {
+		webDir = "web"
+	}
 	return &BuildHtml{
 		rootDir:   rootDir,
 		appName:   appName,
 		buildDir:  filepath.Join(rootDir, "build"),
-		staticDir: filepath.Join(rootDir, "web", "static"),
-		frontDir:  filepath.Join(rootDir, "web", "front"),
+		staticDir: filepath.Join(rootDir, webDir, "static"),
+		frontDir:  filepath.Join(rootDir, webDir, "front"),
 	}
 }
 
@@ -54,7 +57,7 @@ func (b *BuildHtml) Copy() error {
 
 	// copy aimDirs to build/
 	for _, aim := range aimDirs {
-		var srcDir = filepath.Join(b.rootDir, "web", aim)
+		var srcDir = filepath.Join(filepath.Dir(b.staticDir), aim)
 		var destDir = filepath.Join(b.buildDir, "web", aim)
 		if err := os.CopyFS(destDir, os.DirFS(srcDir)); err != nil {
 			return err
