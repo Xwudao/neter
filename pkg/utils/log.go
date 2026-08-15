@@ -11,7 +11,7 @@ import (
 func CheckErrWithStatus(err error) {
 	if err != nil {
 		Error(err)
-		os.Exit(0)
+		os.Exit(1)
 	}
 }
 func LoadFiles(dir string, filter func(filename string) bool) (filenames []string) {

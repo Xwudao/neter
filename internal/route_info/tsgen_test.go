@@ -74,3 +74,72 @@ func TestGenerateTypeScript(t *testing.T) {
 		}
 	}
 }
+
+func TestTsGenFileNames(t *testing.T) {
+	srcFiles := []string{
+		"internal/routes/v1/category_routes.go", // unique base → bare name
+		"internal/routes/v1/search_routes.go",   // collides: primary (largest path) keeps bare name
+		"internal/routes/app/search_routes.go",  // collides: parent-dir prefix
+		"internal/routes/v1/disk_routes.go",     // collides: primary keeps bare name
+		"internal/routes/app/disk_routes.go",    // collides: parent-dir prefix
+		"internal/routes/open/disk_routes.go",   // collides: parent-dir prefix
+		"internal/routes/routes.go",             // base "api" → bare name
+	}
+
+	names := tsGenFileNames(srcFiles)
+	got := map[string]string{}
+	for _, src := range srcFiles {
+		got[src] = names[src]
+	}
+
+	want := map[string]string{
+		"internal/routes/v1/category_routes.go": "category.gen.ts",
+		"internal/routes/v1/search_routes.go":   "search.gen.ts",
+		"internal/routes/app/search_routes.go":  "app_search.gen.ts",
+		"internal/routes/v1/disk_routes.go":     "disk.gen.ts",
+		"internal/routes/app/disk_routes.go":    "app_disk.gen.ts",
+		"internal/routes/open/disk_routes.go":   "open_disk.gen.ts",
+		"internal/routes/routes.go":             "api.gen.ts",
+	}
+	for src, w := range want {
+		if got[src] != w {
+			t.Errorf("tsGenFileNames(%q) = %q, want %q", src, got[src], w)
+		}
+	}
+
+	// Every name must be unique and complete.
+	seen := map[string]string{}
+	for src, name := range got {
+		if prev, ok := seen[name]; ok {
+			t.Errorf("output name %q assigned to both %q and %q", name, prev, src)
+		}
+		seen[name] = src
+	}
+	if len(seen) != len(srcFiles) {
+		t.Errorf("expected %d distinct output names, got %d", len(srcFiles), len(seen))
+	}
+}
+
+func TestTsGenFileNamesUniquenessFallback(t *testing.T) {
+	// Pathological layout: a prefixed collision name collides with another
+	// file's bare name. The fallback suffix must keep everything unique.
+	srcFiles := []string{
+		"internal/routes/v1/search_routes.go",
+		"internal/routes/app/search_routes.go",
+		"internal/routes/app_search.go", // bare name app_search.gen.ts
+	}
+
+	names := tsGenFileNames(srcFiles)
+	seen := map[string]string{}
+	for _, src := range srcFiles {
+		name := names[src]
+		if name == "" {
+			t.Errorf("missing output name for %q", src)
+			continue
+		}
+		if prev, ok := seen[name]; ok {
+			t.Errorf("output name %q assigned to both %q and %q", name, prev, src)
+		}
+		seen[name] = src
+	}
+}

@@ -30,6 +30,16 @@ web/src/api/generated/
   ...
 ```
 
+文件名取路由源文件的 base 名（`category_routes.go` → `category.gen.ts`）。当多个源文件
+（如 `internal/routes/v1/search_routes.go` 与 `internal/routes/app/search_routes.go`）
+映射到同一文件名时，路径最大者保留原名（通常是最新 API 版本目录，如 `v1`），其余文件
+加父目录前缀，避免静默覆盖丢失契约：
+
+```
+internal/routes/v1/search_routes.go → search.gen.ts
+internal/routes/app/search_routes.go → app_search.gen.ts
+```
+
 `--output` 以 `.ts` 结尾则保留旧单文件模式（自包含 `ApiResponse`）。
 
 ## 生成内容

@@ -225,7 +225,7 @@ func runRouteInfoGenTS(cmd *cobra.Command) error {
 				return fmt.Errorf("read generated TypeScript file: %w", err)
 			}
 			if string(existing) != generated {
-				return fmt.Errorf("generated TypeScript contracts are stale: run nr route-info gen-ts --dir %s --output %s", dir, output)
+				return fmt.Errorf("generated TypeScript contract %s is stale: run nr route-info gen-ts --dir %s --output %s", output, dir, output)
 			}
 			fmt.Printf("TypeScript contracts are current: %s (%d routes)\n", output, len(routes.Routes))
 			return nil
@@ -256,14 +256,18 @@ func runRouteInfoGenTSDir(projectDir, outputDir string, routes *route_info.Proje
 	sort.Strings(names)
 
 	if check {
+		var stale []string
 		for _, name := range names {
 			existing, err := os.ReadFile(filepath.Join(outputDir, name))
 			if err != nil {
 				return fmt.Errorf("read generated TypeScript file %s: %w", name, err)
 			}
 			if string(existing) != files[name] {
-				return fmt.Errorf("generated TypeScript contracts are stale: run nr route-info gen-ts --dir %s --output %s", projectDir, outputDir)
+				stale = append(stale, name)
 			}
+		}
+		if len(stale) > 0 {
+			return fmt.Errorf("generated TypeScript contracts are stale: %s (run nr route-info gen-ts --dir %s --output %s)", strings.Join(stale, ", "), projectDir, outputDir)
 		}
 		fmt.Printf("TypeScript contracts are current: %s (%d routes, %d files)\n", outputDir, len(routes.Routes), len(files))
 		return nil
