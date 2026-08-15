@@ -277,7 +277,7 @@ func writeInterface(b *strings.Builder, name string, fields []FieldInfo, request
 		if optional {
 			marker = "?"
 		}
-		b.WriteString(fmt.Sprintf("  %s%s: %s\n", tsPropertyName(fieldName), marker, tsType(field.Type, field.Fields)))
+		b.WriteString(fmt.Sprintf("  %s%s: %s\n", tsPropertyName(fieldName), marker, tsFieldType(field)))
 	}
 	b.WriteString("}\n\n")
 }
@@ -344,6 +344,42 @@ func tsPropertyName(name string) string {
 	return name
 }
 
+// tsFieldType renders the TS type of a struct field, preferring a resolved
+// enum literal union over the raw Go type string.
+func tsFieldType(field FieldInfo) string {
+	if field.Enum != nil {
+		union := tsEnumUnion(field.Enum)
+		base := strings.TrimSpace(field.Type)
+		for strings.HasPrefix(base, "*") {
+			base = strings.TrimPrefix(base, "*")
+		}
+		if strings.HasPrefix(base, "[]") {
+			return "Array<" + union + ">"
+		}
+		return union
+	}
+	return tsType(field.Type, field.Fields)
+}
+
+// tsEnumUnion renders a literal union for a resolved enum, e.g.
+// '"pending" | "running" | "finished" | "failed"' for string enums and
+// '0 | 1 | 2' for int enums.
+func tsEnumUnion(e *EnumInfo) string {
+	if e == nil || len(e.Values) == 0 {
+		return "unknown"
+	}
+	parts := make([]string, 0, len(e.Values))
+	for _, v := range e.Values {
+		switch e.Kind {
+		case "string":
+			parts = append(parts, fmt.Sprintf("%q", v))
+		default:
+			parts = append(parts, v)
+		}
+	}
+	return strings.Join(parts, " | ")
+}
+
 func tsType(goType string, fields []FieldInfo) string {
 	base := strings.TrimSpace(goType)
 	nullable := false
@@ -382,19 +418,21 @@ func tsType(goType string, fields []FieldInfo) string {
 func tsInlineObject(fields []FieldInfo) string {
 	var b strings.Builder
 	b.WriteString("{ ")
-	for i, field := range fields {
-		if i > 0 {
-			b.WriteString(" ")
-		}
+	first := true
+	for _, field := range fields {
 		name, include := tsFieldName(field, false)
 		if !include {
 			continue
 		}
+		if !first {
+			b.WriteString(" ")
+		}
+		first = false
 		marker := ""
 		if hasOmitEmpty(field.Tag) || strings.HasPrefix(field.Type, "*") {
 			marker = "?"
 		}
-		b.WriteString(fmt.Sprintf("%s%s: %s;", tsPropertyName(name), marker, tsType(field.Type, field.Fields)))
+		b.WriteString(fmt.Sprintf("%s%s: %s;", tsPropertyName(name), marker, tsFieldType(field)))
 	}
 	b.WriteString(" }")
 	return b.String()

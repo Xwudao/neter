@@ -353,3 +353,102 @@ type EntertainmentOverview struct { Balance int64 }
 		t.Fatalf("routes = %#v, want entertainment/overview registered", got)
 	}
 }
+
+func TestAnalyzeRoutesResolvesStringAndIotaEnums(t *testing.T) {
+	root := t.TempDir()
+	writeRouteInfoFixture(t, root, "go.mod", "module example.test/app\n\ngo 1.24\n")
+	writeRouteInfoFixture(t, root, "api/order_routes.go", `package api
+
+import (
+    "example.test/app/enums"
+    "example.test/app/params"
+    "example.test/core"
+    "github.com/gin-gonic/gin"
+)
+
+type OrderRoute struct { g *gin.RouterGroup }
+
+func (r *OrderRoute) Reg() {
+    group := r.g.Group("/api")
+    group.POST("/orders", core.WrapData(r.create()))
+}
+
+func (r *OrderRoute) create() core.WrappedHandlerFunc {
+    return func(c *gin.Context) (any, *core.RtnStatus) {
+        var payload params.CreateOrderRequest
+        _ = c.ShouldBindJSON(&payload)
+        return payload, nil
+    }
+}
+`)
+	writeRouteInfoFixture(t, root, "params/request.go", `package params
+
+import "example.test/app/enums"
+
+type CreateOrderRequest struct {
+    Status enums.OrderStatus `+"`json:\"status\"`"+`
+    Type   enums.OrderType   `+"`json:\"type\"`"+`
+}
+`)
+	writeRouteInfoFixture(t, root, "enums/order.go", `package enums
+
+// String enum with explicit values.
+type OrderStatus string
+
+const (
+    OrderStatusPending OrderStatus = "pending"
+    OrderStatusPaid    OrderStatus = "paid"
+)
+
+// Int enum via iota (implicit inheritance).
+type OrderType int
+
+const (
+    OrderTypeNormal OrderType = iota
+    OrderTypeExpress
+    OrderTypeCancel
+)
+`)
+
+	routes, err := AnalyzeRoutes(root)
+	if err != nil {
+		t.Fatalf("AnalyzeRoutes() error = %v", err)
+	}
+	if len(routes.Routes) != 1 {
+		t.Fatalf("route count = %d, want 1", len(routes.Routes))
+	}
+	params := routes.Routes[0].Params
+	if len(params) != 1 || len(params[0].Fields) != 2 {
+		t.Fatalf("params = %#v, want 1 param with 2 fields", params)
+	}
+
+	fields := params[0].Fields
+	if fields[0].Enum == nil || fields[0].Enum.Kind != "string" ||
+		strings.Join(fields[0].Enum.Values, ",") != "pending,paid" {
+		t.Fatalf("field 0 enum = %#v, want string enum [pending paid]", fields[0].Enum)
+	}
+	if fields[1].Enum == nil || fields[1].Enum.Kind != "int" ||
+		strings.Join(fields[1].Enum.Values, ",") != "0,1,2" {
+		t.Fatalf("field 1 enum = %#v, want int enum [0 1 2]", fields[1].Enum)
+	}
+
+	// The TS contract must contain the literal unions.
+	ts := GenerateTypeScriptFiles(routes)
+	var contract string
+	for name, content := range ts {
+		if name == "order.gen.ts" {
+			contract = content
+		}
+	}
+	if contract == "" {
+		t.Fatalf("missing order.gen.ts in %v", ts)
+	}
+	for _, want := range []string{
+		`status: "pending" | "paid"`,
+		`type: 0 | 1 | 2`,
+	} {
+		if !strings.Contains(contract, want) {
+			t.Fatalf("contract missing %q:\n%s", want, contract)
+		}
+	}
+}

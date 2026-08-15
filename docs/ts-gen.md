@@ -72,7 +72,26 @@ export type GetV1CategoryListResponse = ApiResponse<Array<GetV1CategoryListRespo
 | `[]T` | `Array<T>` |
 | `map[K]V` / `gin.H` | `Record<string, unknown>` |
 | `*T` | `T \| null`（字段级用 `?`） |
-| 未解析类型（枚举、外部包） | `unknown` |
+| 枚举：`type X string/int` + const 值 | 字面量联合（如 `"pending" \| "running"`、`0 \| 1 \| 2`） |
+| 未解析类型（外部包、循环引用） | `unknown` |
+
+枚举解析支持 ent 生成的子包枚举（`disktask.Status`）、手写 `pkg/enum` 类型，以及 `iota`
+递增（含隐式继承），值按声明顺序展开：
+
+```go
+// Go
+type Status string
+
+const (
+	StatusPending Status = "pending"
+	StatusRunning Status = "running"
+)
+```
+
+```ts
+// TS
+status?: "pending" | "running"
+```
 
 分析器还会：
 
@@ -103,7 +122,8 @@ const postApiCreateCategory = (payload: PostAdminV1CategoryCreateBody) => {
      （如 `IUserRtn`）；完整 `ent.X` 展开的非指针字段会直接生成为必填字段
    - **query 宽松输入**：后端 query 字段都是 string，前端常用 number 传参，
      补充 `{ id?: number | string }` 之类的输入类型
-   - **枚举联合**：未解析枚举是 `unknown`，可按业务补充字面量联合
+   - **未解析枚举**：少数常量表达式无法静态求值（如引用函数返回值）的枚举仍是
+     `unknown`，可按业务补充字面量联合
 
 4. 校验：`nr route-info gen-ts --check` 可接入 CI，路由变更后强制重新生成。
 

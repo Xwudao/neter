@@ -32,9 +32,20 @@ type FieldInfo struct {
 	Tag      string      `json:"tag,omitempty"`      // struct tag (json/form/binding)
 	Required bool        `json:"required,omitempty"` // whether binding:"required" is set
 	Fields   []FieldInfo `json:"fields,omitempty"`   // nested struct fields
+	// Enum is set when Type resolves to a named enum (type X string/int)
+	// with const values; TS generation then emits a literal union instead of
+	// unknown. For slice fields it describes the element type.
+	Enum *EnumInfo `json:"-"`
 	// FromEnt distinguishes Ent's generated serialization tags from API
 	// optionality. Ent emits omitempty on most entity fields by default.
 	FromEnt bool `json:"-"`
+}
+
+// EnumInfo describes a named enum type (type X string/int/bool) with its
+// literal const values, so TS generators can emit a literal union.
+type EnumInfo struct {
+	Kind   string   `json:"kind,omitempty"`   // string, int or bool
+	Values []string `json:"values,omitempty"` // literal values in declaration order
 }
 
 // ReturnInfo describes a return value from a handler.

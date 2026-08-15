@@ -11,6 +11,7 @@ import (
 	"reflect"
 	"regexp"
 	"slices"
+	"strconv"
 	"strings"
 	"unicode"
 )
@@ -25,6 +26,7 @@ func AnalyzeRoutes(projectRoot string) (*ProjectRoutes, error) {
 		importMapCache:  map[string]map[string]string{},
 		parsedCache:     map[string]*ast.File{},
 		structCache:     map[string][]FieldInfo{},
+		enumCache:       map[string]*EnumInfo{},
 		unresolvedTypes: map[string]bool{},
 		groupMapCache:   map[string]string{},
 		resolvingTypes:  map[string]bool{},
@@ -59,6 +61,8 @@ type routeAnalyzer struct {
 	parsedCache map[string]*ast.File
 	// cache: "fullPkgPath.StructName" → fields
 	structCache map[string][]FieldInfo
+	// cache: "fullPkgPath.EnumName" → enum values
+	enumCache map[string]*EnumInfo
 	// cache: types that were searched for but not found
 	unresolvedTypes map[string]bool
 	// cache: file path → group var name → group prefix
@@ -1125,79 +1129,82 @@ func (ra *routeAnalyzer) resolveReturnFields(typeStr string, filePath string, im
 // fullPkgPath is the full import path (empty for same-package types).
 // typeName is the struct name.
 func (ra *routeAnalyzer) resolveStructFields(fullPkgPath, typeName string) []FieldInfo {
+	fields, _ := ra.resolveTypeInfo(fullPkgPath, typeName)
+	return fields
+}
+
+// resolveEnumType resolves a named enum (type X string/int) with its const
+// values, or nil when the type is not an enum (or not found).
+func (ra *routeAnalyzer) resolveEnumType(fullPkgPath, typeName string) *EnumInfo {
+	_, enum := ra.resolveTypeInfo(fullPkgPath, typeName)
+	return enum
+}
+
+// resolveTypeInfo resolves a named type to either its struct fields or its
+// enum values. It returns (fields, enum); exactly one is non-nil when the
+// type is found and resolvable.
+func (ra *routeAnalyzer) resolveTypeInfo(fullPkgPath, typeName string) ([]FieldInfo, *EnumInfo) {
 	cacheKey := fullPkgPath + "." + typeName
 	if fields, ok := ra.structCache[cacheKey]; ok {
-		return fields
+		return fields, nil
+	}
+	if enum, ok := ra.enumCache[cacheKey]; ok {
+		return nil, enum
 	}
 	if ra.unresolvedTypes[cacheKey] {
-		return nil
+		return nil, nil
 	}
 	// Guard: prevent re-entering resolution for the same type (circular refs).
 	if ra.resolvingTypes[cacheKey] {
-		return nil
+		return nil, nil
 	}
 	ra.resolvingTypes[cacheKey] = true
 	defer delete(ra.resolvingTypes, cacheKey)
 
-	// Determine the directory for the package.
-	pkgDir := ""
+	var candidates []cachedFile
 	if fullPkgPath == "" || fullPkgPath == ra.moduleName {
 		// Same package or root module — search in already-parsed files.
-		// We'll need to check all parsed files for the type.
-		for _, cached := range ra.cachedFilesSnapshot() {
-			fp, pf := cached.path, cached.file
-			pkg := pf.Name.Name
-			if typeFields := ra.findStructInFile(fp, pf, typeName, isEntPackage(fullPkgPath)); typeFields != nil {
-				ra.structCache[cacheKey] = typeFields
-				ra.structCache[pkg+"."+typeName] = typeFields
-				return typeFields
+		candidates = ra.cachedFilesSnapshot()
+	} else {
+		// Local project package: parse all Go files in the package directory.
+		if after, ok := strings.CutPrefix(fullPkgPath, ra.moduleName); ok {
+			rel := strings.TrimPrefix(after, "/")
+			pkgDir := filepath.Join(ra.projectRoot, rel)
+			entries, err := os.ReadDir(pkgDir)
+			if err == nil {
+				for _, entry := range entries {
+					if entry.IsDir() || !strings.HasSuffix(entry.Name(), ".go") {
+						continue
+					}
+					fp := filepath.Join(pkgDir, entry.Name())
+					fset := token.NewFileSet()
+					pf, err := parser.ParseFile(fset, fp, nil, parser.ParseComments)
+					if err != nil {
+						continue
+					}
+					ra.parsedCache[fp] = pf
+					candidates = append(candidates, cachedFile{path: fp, file: pf})
+				}
 			}
 		}
-		ra.unresolvedTypes[cacheKey] = true
-		return nil
 	}
 
-	// For external or local packages, try to find the directory.
-	if after, ok := strings.CutPrefix(fullPkgPath, ra.moduleName); ok {
-		// Local project package.
-		rel := after
-		rel = strings.TrimPrefix(rel, "/")
-		pkgDir = filepath.Join(ra.projectRoot, rel)
-	} else {
-		// External package — skip for now.
-		return nil
-	}
-
-	if pkgDir == "" {
-		return nil
-	}
-
-	// Parse all Go files in the package directory.
-	entries, err := os.ReadDir(pkgDir)
-	if err != nil {
-		return nil
-	}
-
-	for _, entry := range entries {
-		if entry.IsDir() || !strings.HasSuffix(entry.Name(), ".go") {
-			continue
-		}
-		fp := filepath.Join(pkgDir, entry.Name())
-		fset := token.NewFileSet()
-		pf, err := parser.ParseFile(fset, fp, nil, parser.ParseComments)
-		if err != nil {
-			continue
-		}
-		ra.parsedCache[fp] = pf
-
-		if fields := ra.findStructInFile(fp, pf, typeName, isEntPackage(fullPkgPath)); fields != nil {
-			ra.structCache[cacheKey] = fields
-			return fields
+	for _, cached := range candidates {
+		pf := cached.file
+		fields, enum := ra.findTypeInFile(cached.path, pf, typeName, isEntPackage(fullPkgPath), ra.packageFiles(cached.path))
+		if fields != nil || enum != nil {
+			if fields != nil {
+				ra.structCache[cacheKey] = fields
+				ra.structCache[pf.Name.Name+"."+typeName] = fields
+			} else {
+				ra.enumCache[cacheKey] = enum
+			}
+			return fields, enum
 		}
 	}
 
 	ra.unresolvedTypes[cacheKey] = true
-	return nil
+	return nil, nil
 }
 
 type cachedFile struct {
@@ -1219,6 +1226,16 @@ func (ra *routeAnalyzer) cachedFilesSnapshot() []cachedFile {
 }
 
 func (ra *routeAnalyzer) findStructInFile(fp string, f *ast.File, typeName string, fromEnt bool) []FieldInfo {
+	fields, _ := ra.findTypeInFile(fp, f, typeName, fromEnt, nil)
+	return fields
+}
+
+// findTypeInFile locates a type declaration in a parsed file and resolves it
+// to either its struct fields or its enum values. For enums the const values
+// are collected from every file in the enum's package (consts may live in a
+// different file than the type, e.g. ent's enum subpackages), which must be
+// passed as pkgFiles to avoid mixing up same-named enums from other packages.
+func (ra *routeAnalyzer) findTypeInFile(fp string, f *ast.File, typeName string, fromEnt bool, pkgFiles []cachedFile) ([]FieldInfo, *EnumInfo) {
 	for _, decl := range f.Decls {
 		gd, ok := decl.(*ast.GenDecl)
 		if !ok {
@@ -1230,15 +1247,183 @@ func (ra *routeAnalyzer) findStructInFile(fp string, f *ast.File, typeName strin
 				continue
 			}
 			st, ok := ts.Type.(*ast.StructType)
-			if !ok {
-				continue
+			if ok {
+				return ra.extractFieldsFromStruct(st, func(nested string) []FieldInfo {
+					return ra.resolveEmbeddedType(fp, nested)
+				}, fromEnt), nil
 			}
-			return ra.extractFieldsFromStruct(st, func(nested string) []FieldInfo {
-				return ra.resolveEmbeddedType(fp, nested)
-			}, fromEnt)
+			if enum := ra.collectEnumValues(pkgFiles, typeName, ts.Type); enum != nil {
+				return nil, enum
+			}
 		}
 	}
+	return nil, nil
+}
+
+// packageFiles returns the parsed files that belong to the same package
+// directory as anchor, so enum const collection stays inside one package.
+func (ra *routeAnalyzer) packageFiles(anchor string) []cachedFile {
+	dir := filepath.Dir(anchor)
+	var files []cachedFile
+	for _, c := range ra.cachedFilesSnapshot() {
+		if filepath.Dir(c.path) == dir {
+			files = append(files, c)
+		}
+	}
+	return files
+}
+
+// collectEnumValues resolves a named enum type (type X string/int/bool) to
+// its const values, scanning pkgFiles for const declarations whose (possibly
+// inherited) type matches typeName. It returns nil when the type is not an
+// enum or has no extractable values.
+func (ra *routeAnalyzer) collectEnumValues(pkgFiles []cachedFile, typeName string, typeExpr ast.Expr) *EnumInfo {
+	kind := enumKind(exprString(typeExpr))
+	if kind == "" {
+		return nil
+	}
+
+	// First pass: build a const name → literal value table so value
+	// references such as `DefaultStatus = StatusPending` resolve.
+	constValues := map[string]string{}
+	for _, cached := range pkgFiles {
+		walkConstDecls(cached.file, func(specs []*ast.ValueSpec) {
+			iotaIdx := 0
+			var prevExpr ast.Expr
+			for _, vs := range specs {
+				expr := enumValueExpr(vs)
+				if expr == nil {
+					expr = prevExpr
+				}
+				if val := evalEnumExpr(expr, iotaIdx, constValues); val != "" {
+					for _, n := range vs.Names {
+						constValues[n.Name] = val
+					}
+				}
+				if e := enumValueExpr(vs); e != nil {
+					prevExpr = e
+				}
+				iotaIdx++
+			}
+		})
+	}
+
+	// Second pass: keep the values whose spec type matches (explicitly or by
+	// inheritance). Values keep declaration order for a stable union.
+	var values []string
+	for _, cached := range pkgFiles {
+		walkConstDecls(cached.file, func(specs []*ast.ValueSpec) {
+			iotaIdx := 0
+			var prevExpr ast.Expr
+			var prevType string
+			for _, vs := range specs {
+				specType := prevType
+				if vs.Type != nil {
+					specType = exprString(vs.Type)
+				}
+				expr := enumValueExpr(vs)
+				if expr == nil {
+					expr = prevExpr
+				}
+				if specType == typeName {
+					if val := evalEnumExpr(expr, iotaIdx, constValues); val != "" {
+						values = append(values, val)
+					}
+				}
+				if vs.Type != nil {
+					prevType = specType
+				}
+				if e := enumValueExpr(vs); e != nil {
+					prevExpr = e
+				}
+				iotaIdx++
+			}
+		})
+	}
+
+	if len(values) == 0 {
+		return nil
+	}
+	return &EnumInfo{Kind: kind, Values: values}
+}
+
+// enumValueExpr returns the first value expression of a const spec, or nil
+// when the spec has none (inherited from the previous spec).
+func enumValueExpr(vs *ast.ValueSpec) ast.Expr {
+	if len(vs.Values) > 0 {
+		return vs.Values[0]
+	}
 	return nil
+}
+
+// walkConstDecls visits every const declaration in a file, calling fn with
+// its ValueSpecs in declaration order.
+func walkConstDecls(f *ast.File, fn func(specs []*ast.ValueSpec)) {
+	for _, decl := range f.Decls {
+		gd, ok := decl.(*ast.GenDecl)
+		if !ok || gd.Tok != token.CONST {
+			continue
+		}
+		specs := make([]*ast.ValueSpec, 0, len(gd.Specs))
+		for _, spec := range gd.Specs {
+			if vs, ok := spec.(*ast.ValueSpec); ok {
+				specs = append(specs, vs)
+			}
+		}
+		fn(specs)
+	}
+}
+
+// enumKind classifies a Go type declaration's base type as an enum kind, or
+// "" when it is not a named scalar type.
+func enumKind(baseType string) string {
+	switch strings.TrimPrefix(baseType, "*") {
+	case "string", "rune", "byte":
+		return "string"
+	case "int", "int8", "int16", "int32", "int64",
+		"uint", "uint8", "uint16", "uint32", "uint64",
+		"float32", "float64":
+		return "int"
+	case "bool":
+		return "bool"
+	default:
+		return ""
+	}
+}
+
+// evalEnumExpr evaluates a const expression to its literal string value, or
+// "" when it cannot be evaluated. It handles string/number literals, iota
+// positions, negation and references to previously declared consts.
+func evalEnumExpr(expr ast.Expr, iotaIdx int, consts map[string]string) string {
+	switch e := expr.(type) {
+	case nil:
+		return ""
+	case *ast.BasicLit:
+		switch e.Kind {
+		case token.STRING, token.CHAR:
+			if s, err := strconv.Unquote(e.Value); err == nil {
+				return s
+			}
+		case token.INT, token.FLOAT:
+			return e.Value
+		}
+	case *ast.Ident:
+		if e.Name == "iota" {
+			return strconv.Itoa(iotaIdx)
+		}
+		if v, ok := consts[e.Name]; ok {
+			return v
+		}
+	case *ast.UnaryExpr:
+		if e.Op == token.SUB {
+			if v := evalEnumExpr(e.X, iotaIdx, consts); v != "" {
+				return "-" + v
+			}
+		}
+	case *ast.ParenExpr:
+		return evalEnumExpr(e.X, iotaIdx, consts)
+	}
+	return ""
 }
 
 // resolveEmbeddedType resolves an embedded struct type relative to the package
@@ -1360,9 +1545,10 @@ func (ra *routeAnalyzer) extractFieldsFromStruct(st *ast.StructType, embeddedRes
 				continue
 			}
 
-			if childFields := ra.resolveNestedTypeName(nestedType); childFields != nil {
+			if childFields, childEnum := ra.resolveNestedTypeInfo(nestedType); childFields != nil || childEnum != nil {
 				fi.Fields = childFields
-				if fromEnt {
+				fi.Enum = childEnum
+				if fromEnt && childFields != nil {
 					fi.Fields = markFieldsFromEnt(fi.Fields)
 				}
 			}
@@ -1407,11 +1593,13 @@ func bindingTagRequired(tag string) bool {
 	return false
 }
 
-// resolveNestedTypeName resolves a qualified type name like "params.SyncDiskTagItem"
-// by trying all available import maps from parsed files.
-func (ra *routeAnalyzer) resolveNestedTypeName(typeName string) []FieldInfo {
+// resolveNestedTypeInfo resolves a qualified type name like
+// "params.SyncDiskTagItem" or an ent enum like "disktask.Status" to its
+// struct fields or enum values by trying all available import maps from
+// parsed files.
+func (ra *routeAnalyzer) resolveNestedTypeInfo(typeName string) ([]FieldInfo, *EnumInfo) {
 	if !strings.Contains(typeName, ".") {
-		return ra.resolveStructFields("", typeName)
+		return ra.resolveTypeInfo("", typeName)
 	}
 	parts := strings.SplitN(typeName, ".", 2)
 	pkgAlias := parts[0]
@@ -1422,22 +1610,22 @@ func (ra *routeAnalyzer) resolveNestedTypeName(typeName string) []FieldInfo {
 		pf := cached.file
 		imports := buildImportMap(pf)
 		if fullPath, ok := imports[pkgAlias]; ok {
-			if fields := ra.resolveStructFields(fullPath, structName); fields != nil {
-				return fields
+			if fields, enum := ra.resolveTypeInfo(fullPath, structName); fields != nil || enum != nil {
+				return fields, enum
 			}
 		}
 		// Also try same-package resolution from this file.
 		if pf.Name.Name == pkgAlias {
-			if fields := ra.resolveStructFields("", structName); fields != nil {
-				return fields
+			if fields, enum := ra.resolveTypeInfo("", structName); fields != nil || enum != nil {
+				return fields, enum
 			}
 		}
 	}
 	// Also try directly from already cached types.
-	if fields := ra.resolveStructFields("", structName); fields != nil {
-		return fields
+	if fields, enum := ra.resolveTypeInfo("", structName); fields != nil || enum != nil {
+		return fields, enum
 	}
-	return nil
+	return nil, nil
 }
 
 // ─── Utility helpers ─────────────────────────────────────────────────────────
