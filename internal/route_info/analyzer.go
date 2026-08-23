@@ -74,10 +74,14 @@ type routeAnalyzer struct {
 // ─── Scanning ────────────────────────────────────────────────────────────────
 
 func (ra *routeAnalyzer) scan() error {
-	// Route registration code is commonly, but not exclusively, placed under
-	// routes/. Scan the project root so custom layouts are covered too; only
-	// route structs are analyzed, keeping the additional work small.
-	if err := ra.scanDir(ra.projectRoot, map[string]bool{}); err != nil {
+	// Most projects keep HTTP registrations under internal/routes. Prefer that
+	// bounded tree to avoid interpreting commands, fixtures, and generated code
+	// as route declarations; fall back to the project root for custom layouts.
+	dir := filepath.Join(ra.projectRoot, "internal", "routes")
+	if _, err := os.Stat(dir); err != nil {
+		dir = ra.projectRoot
+	}
+	if err := ra.scanDir(dir, map[string]bool{}); err != nil {
 		return fmt.Errorf("scan project: %w", err)
 	}
 	return nil
@@ -97,7 +101,7 @@ func (ra *routeAnalyzer) scanDir(dir string, scanned map[string]bool) error {
 			}
 			return nil
 		}
-		if !strings.HasSuffix(path, ".go") {
+		if !strings.HasSuffix(path, ".go") || strings.HasSuffix(path, "_test.go") || strings.HasSuffix(path, "_gen.go") {
 			return nil
 		}
 		if scanned[path] {

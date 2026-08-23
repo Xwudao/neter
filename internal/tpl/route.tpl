@@ -35,15 +35,15 @@ func New{{.StructRouteName}}({{if not .UseRouterRegister}}g *gin.Engine, {{end}}
 }
 
 func (r *{{.StructRouteName}}) {{if .UseRouteRegistry}}Register{{else}}Reg{{end}}({{if .UseRouterRegister}}router gin.IRouter{{end}}) {
-	// {{if .UseRouterRegister}}router{{else}}r.g{{end}}.GET("/{{.PackageName}}/{{.ToSnake .Name}}", {{if .UseTypedAPI}}core.NoInput(r.{{.ToLowerCamel .Name}}){{else}}core.WrapData(r.{{.ToLowerCamel .Name}}()){{end}})
+	// {{if .UseRouterRegister}}router{{else}}r.g{{end}}.GET("/{{.PackageName}}/{{.ToSnake .Name}}", {{if .UseTypedAPI}}core.NoInput{{if .UseErrorTypedAPI}}E{{end}}(r.{{.ToLowerCamel .Name}}){{else}}core.WrapData(r.{{.ToLowerCamel .Name}}()){{end}})
 
 	group := {{if .UseRouterRegister}}router{{else}}r.g{{end}}.Group("/{{.PackageName}}/{{.ToSnake .Name}}")
 	{
-		group.GET("", {{if .UseTypedAPI}}core.NoInput(r.{{.ToLowerCamel .Name}}){{else}}core.WrapData(r.{{.ToLowerCamel .Name}}()){{end}})
+		group.GET("", {{if .UseTypedAPI}}core.NoInput{{if .UseErrorTypedAPI}}E{{end}}(r.{{.ToLowerCamel .Name}}){{else}}core.WrapData(r.{{.ToLowerCamel .Name}}()){{end}})
 	}
 	authGroup := {{if .UseRouterRegister}}router{{else}}r.g{{end}}.Group("/auth/{{.PackageName}}/{{.ToSnake .Name}}").Use(mdw.MustLoginMiddleware())
 	{
-		// authGroup.GET("/auth", {{if .UseTypedAPI}}core.NoInput(r.{{.ToLowerCamel .Name}}){{else}}core.WrapData(r.{{.ToLowerCamel .Name}}()){{end}})
+		// authGroup.GET("/auth", {{if .UseTypedAPI}}core.NoInput{{if .UseErrorTypedAPI}}E{{end}}(r.{{.ToLowerCamel .Name}}){{else}}core.WrapData(r.{{.ToLowerCamel .Name}}()){{end}})
 		_ = authGroup
 	}
 	adminGroup := {{if .UseRouterRegister}}router{{else}}r.g{{end}}.Group("/admin/{{.PackageName}}/{{.ToSnake .Name}}").Use(mdw.MustWithRoleMiddleware(user.RoleAdmin))
@@ -54,7 +54,7 @@ func (r *{{.StructRouteName}}) {{if .UseRouteRegistry}}Register{{else}}Reg{{end}
 
 
 {{if .UseTypedAPI -}}
-func (r *{{.StructRouteName}}) {{.ToLowerCamel .Name}}(c *gin.Context) (string, *core.RtnStatus) {
+func (r *{{.StructRouteName}}) {{.ToLowerCamel .Name}}(c *gin.Context) (string, {{if .UseErrorTypedAPI}}error{{else}}*core.RtnStatus{{end}}) {
 	return "hello", nil
 }
 {{else -}}

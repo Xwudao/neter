@@ -283,7 +283,7 @@ func (scanner *Scanner) getTokens(max int) ([]string, string, error) {
 		tokens = append(tokens, tok)
 
 		if strings.ContainsRune(scanner.UserTokens, rune(delim)) {
-			tokens = append(tokens, string(delim))
+			tokens = append(tokens, string(rune(delim)))
 		}
 
 	}

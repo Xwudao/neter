@@ -35,6 +35,9 @@ func ParseArgsString(args string) []string {
 			}
 		}
 	}
+	if !lastSpace {
+		cc = append(cc, args[start:])
+	}
 	for i := 0; i < len(cc); i++ {
 		if strings.HasPrefix(cc[i], `"`) {
 			cc[i] = strings.Trim(cc[i], `"`)

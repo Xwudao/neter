@@ -11,6 +11,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"text/template"
 
@@ -68,6 +69,9 @@ type Generator struct {
 	// project can use RouteRegistry while continuing to generate WrapData
 	// handlers until its API contracts are migrated.
 	UseTypedAPI bool
+	// UseErrorTypedAPI selects the modern JSONE/RequestE/NoInputE contract
+	// whose handlers return error instead of *core.RtnStatus.
+	UseErrorTypedAPI bool
 	// UseRouterRegister is enabled after the optional router-injection
 	// migration. Older registry projects continue to receive g-backed routes.
 	UseRouterRegister bool
@@ -100,11 +104,26 @@ func NewGenerator(req Request) *Generator {
 	}
 }
 
-func Execute(req Request) error {
+func Execute(req Request) (err error) {
 	g := NewGenerator(req)
 	if err := g.prepare(); err != nil {
 		return err
 	}
+	// Generating a route or biz changes several files. Snapshot them before
+	// mutation so a later registry/provider/Wire failure does not strand the
+	// project in a half-generated state.
+	rollback, err := g.snapshotMutationFiles()
+	if err != nil {
+		return err
+	}
+	defer func() {
+		if err == nil {
+			return
+		}
+		if rollbackErr := rollback(); rollbackErr != nil {
+			err = errors.Join(err, fmt.Errorf("rollback generated files: %w", rollbackErr))
+		}
+	}()
 
 	switch req.TypeName {
 	case "route":
@@ -165,6 +184,52 @@ func Execute(req Request) error {
 	}
 
 	return nil
+}
+
+type fileSnapshot struct {
+	content []byte
+	exists  bool
+}
+
+func (g *Generator) snapshotMutationFiles() (func() error, error) {
+	paths := []string{
+		g.saveRouteFilePath, g.saveBizFilePath, g.saveBizIfaceFilePath, g.saveRepoFilePath,
+		g.saveBizParamsFilePath, g.saveBizContractFilePath,
+		filepath.Join(filepath.Dir(g.RootPath), "registry.go"),
+		filepath.Join(filepath.Dir(g.RootPath), "root.go"),
+		filepath.Join(g.RootPath, "provider.go"),
+		filepath.Join(filepath.Dir(g.RootPath), "data", "provider.go"),
+	}
+	snapshots := make(map[string]fileSnapshot, len(paths))
+	for _, path := range paths {
+		if _, seen := snapshots[path]; seen {
+			continue
+		}
+		content, readErr := os.ReadFile(path)
+		if readErr == nil {
+			snapshots[path] = fileSnapshot{content: content, exists: true}
+			continue
+		}
+		if !errors.Is(readErr, os.ErrNotExist) {
+			return nil, fmt.Errorf("snapshot %s: %w", path, readErr)
+		}
+		snapshots[path] = fileSnapshot{}
+	}
+	return func() error {
+		var errs []error
+		for path, snapshot := range snapshots {
+			if snapshot.exists {
+				if restoreErr := utils.WriteFileAtomic(path, snapshot.content, 0o644); restoreErr != nil {
+					errs = append(errs, fmt.Errorf("restore %s: %w", path, restoreErr))
+				}
+				continue
+			}
+			if removeErr := os.Remove(path); removeErr != nil && !errors.Is(removeErr, os.ErrNotExist) {
+				errs = append(errs, fmt.Errorf("remove %s: %w", path, removeErr))
+			}
+		}
+		return errors.Join(errs...)
+	}, nil
 }
 
 func (g *Generator) generateWire() error {
@@ -235,11 +300,43 @@ func (g *Generator) prepare() error {
 	g.StructRouteName = strcase.ToCamel(g.Name + "Route")
 	g.StructBizName = strcase.ToCamel(g.Name + "Biz")
 	g.StructRepoName = strcase.ToCamel(g.Name + "Repository")
+	g.V2 = g.V2 || g.usesKoanfV2()
+	if !g.V2 && g.usesLegacyKoanf() {
+		utils.Info("warning: legacy github.com/knadh/koanf detected; run `nr migrate koanf` to preview the v2 migration")
+	}
 	g.UseRouteRegistry = g.hasRouteRegistry()
 	g.UseTypedAPI = g.hasTypedAPI()
+	g.UseErrorTypedAPI = g.hasErrorTypedAPI()
 	g.UseRouterRegister = g.hasRouterRegister()
 
 	return nil
+}
+
+// usesKoanfV2 detects the project's configured koanf major version so a
+// scaffold generated from the current template compiles without requiring an
+// otherwise easy-to-miss --v2 flag.
+func (g *Generator) usesKoanfV2() bool {
+	root, err := utils.FindProjectRoot(8)
+	if err != nil {
+		return false
+	}
+	goMod, err := os.ReadFile(filepath.Join(root, "go.mod"))
+	if err != nil {
+		return false
+	}
+	return strings.Contains(string(goMod), "github.com/knadh/koanf/v2")
+}
+
+func (g *Generator) usesLegacyKoanf() bool {
+	root, err := utils.FindProjectRoot(8)
+	if err != nil {
+		return false
+	}
+	goMod, err := os.ReadFile(filepath.Join(root, "go.mod"))
+	if err != nil {
+		return false
+	}
+	return strings.Contains(string(goMod), "github.com/knadh/koanf ")
 }
 
 func (g *Generator) hasTypedAPI() bool {
@@ -249,6 +346,15 @@ func (g *Generator) hasTypedAPI() bool {
 		return false
 	}
 	return strings.Contains(string(source), "func NoInput[")
+}
+
+func (g *Generator) hasErrorTypedAPI() bool {
+	root := filepath.Dir(filepath.Dir(g.RootPath))
+	source, err := os.ReadFile(filepath.Join(root, "core", "rtn.go"))
+	if err != nil {
+		return false
+	}
+	return strings.Contains(string(source), "func NoInputE[")
 }
 
 func (g *Generator) hasRouteRegistry() bool {
@@ -262,11 +368,44 @@ func (g *Generator) hasRouteRegistry() bool {
 
 func (g *Generator) hasRouterRegister() bool {
 	registryPath := filepath.Join(filepath.Dir(g.RootPath), "registry.go")
-	source, err := os.ReadFile(registryPath)
+	fset := token.NewFileSet()
+	file, err := parser.ParseFile(fset, registryPath, nil, 0)
 	if err != nil {
 		return false
 	}
-	return strings.Contains(string(source), "Register(router gin.IRouter)")
+	for _, decl := range file.Decls {
+		genDecl, ok := decl.(*ast.GenDecl)
+		if !ok || genDecl.Tok != token.TYPE {
+			continue
+		}
+		for _, spec := range genDecl.Specs {
+			typeSpec, ok := spec.(*ast.TypeSpec)
+			if !ok || typeSpec.Name.Name != "Registrar" {
+				continue
+			}
+			iface, ok := typeSpec.Type.(*ast.InterfaceType)
+			if !ok || iface.Methods == nil {
+				continue
+			}
+			for _, method := range iface.Methods.List {
+				if len(method.Names) != 1 || method.Names[0].Name != "Register" {
+					continue
+				}
+				fn, ok := method.Type.(*ast.FuncType)
+				if !ok || fn.Params == nil || len(fn.Params.List) != 1 {
+					continue
+				}
+				selector, ok := fn.Params.List[0].Type.(*ast.SelectorExpr)
+				if !ok || selector.Sel.Name != "IRouter" {
+					continue
+				}
+				if pkg, ok := selector.X.(*ast.Ident); ok && pkg.Name == "gin" {
+					return true
+				}
+			}
+		}
+	}
+	return false
 }
 
 func (g *Generator) GenRoute() error {
@@ -376,10 +515,9 @@ func (g *Generator) updateRoot() error {
 		return err
 	}
 
-	walker := visitor.NewUpdateRoot(fmt.Sprintf("%s%s", g.PackageName, g.StructRouteName), fmt.Sprintf("*%s.%s", g.PackageName, g.StructRouteName))
+	qualifier := g.addPackageImport(fset, f)
+	walker := visitor.NewUpdateRoot(fmt.Sprintf("%s%s", qualifier, g.StructRouteName), fmt.Sprintf("*%s.%s", qualifier, g.StructRouteName))
 	ast.Walk(walker, f)
-
-	g.addPackageImport(fset, f)
 
 	var dst bytes.Buffer
 	if err := format.Node(&dst, fset, f); err != nil {
@@ -424,7 +562,15 @@ func (g *Generator) updateRouteRegistry() error {
 	}
 
 	varName := strcase.ToLowerCamel(g.StructRouteName)
-	typeExpr, err := parser.ParseExpr(fmt.Sprintf("*%s.%s", g.PackageName, g.StructRouteName))
+	for _, field := range registry.Type.Params.List {
+		for _, name := range field.Names {
+			if name.Name == varName {
+				return fmt.Errorf("route registry already contains %s", varName)
+			}
+		}
+	}
+	qualifier := g.addPackageImport(fset, f)
+	typeExpr, err := parser.ParseExpr(fmt.Sprintf("*%s.%s", qualifier, g.StructRouteName))
 	if err != nil {
 		return err
 	}
@@ -433,6 +579,7 @@ func (g *Generator) updateRouteRegistry() error {
 		Type:  typeExpr,
 	})
 
+	updatedReturn := false
 	for _, stmt := range registry.Body.List {
 		ret, ok := stmt.(*ast.ReturnStmt)
 		if !ok || len(ret.Results) != 1 {
@@ -440,23 +587,19 @@ func (g *Generator) updateRouteRegistry() error {
 		}
 		if literal, ok := ret.Results[0].(*ast.CompositeLit); ok {
 			literal.Elts = append(literal.Elts, ast.NewIdent(varName))
+			updatedReturn = true
 			break
 		}
 	}
+	if !updatedReturn {
+		return fmt.Errorf("NewRouteRegistry must return a RouteRegistry composite literal")
+	}
 
-	g.addPackageImport(fset, f)
 	var dst bytes.Buffer
 	if err := format.Node(&dst, fset, f); err != nil {
 		return err
 	}
-	// New AST nodes have no original source position. go/format can therefore
-	// keep them on the preceding line even when the registry was multi-line.
-	// Keep constructor parameters and registry elements one-per-line.
-	typeText := fmt.Sprintf("*%s.%s", g.PackageName, g.StructRouteName)
-	source := strings.ReplaceAll(dst.String(), ", "+varName+" "+typeText+",", ",\n\t"+varName+" "+typeText+",")
-	source = strings.ReplaceAll(source, ", "+varName+" "+typeText+"\n", ",\n\t"+varName+" "+typeText+"\n")
-	source = strings.ReplaceAll(source, ", "+varName+",", ",\n\t\t"+varName+",")
-	if err := utils.SaveToFile(registryPath, []byte(source), true); err != nil {
+	if err := utils.SaveToFile(registryPath, dst.Bytes(), true); err != nil {
 		return err
 	}
 	utils.Info("updating route registry success")
@@ -544,10 +687,12 @@ func (g *Generator) updateRouteProvider() error {
 		return err
 	}
 
-	walker := visitor.NewRouteProvideVisitor(g.PackageName, fmt.Sprintf("New%s", g.StructRouteName))
+	qualifier := g.addPackageImport(fset, f)
+	walker := visitor.NewRouteProvideVisitor(qualifier, fmt.Sprintf("New%s", g.StructRouteName))
 	ast.Walk(walker, f)
-
-	g.addPackageImport(fset, f)
+	if !walker.Updated() {
+		return fmt.Errorf("can't find ProviderRouteSet wire.NewSet declaration in %s", rootFilePath)
+	}
 
 	var dst bytes.Buffer
 	if err := format.Node(&dst, fset, f); err != nil {
@@ -568,14 +713,42 @@ func (g *Generator) updateRouteProvider() error {
 	return nil
 }
 
-func (g *Generator) addPackageImport(fset *token.FileSet, f *ast.File) {
-	pkgName := fmt.Sprintf("%s/internal/routes/%s", g.ModName, g.PackageName)
-	if strings.HasPrefix(g.PackageName, "v") {
-		_ = astutil.AddNamedImport(fset, f, g.PackageName, pkgName)
-		return
+// addPackageImport imports the generated route package with its natural Go
+// package name whenever possible. An explicit alias is used only to avoid a
+// collision with an existing import; this keeps registry imports idiomatic
+// without relying on directory-name heuristics such as a "v" prefix.
+func (g *Generator) addPackageImport(fset *token.FileSet, f *ast.File) string {
+	path := fmt.Sprintf("%s/internal/routes/%s", g.ModName, g.PackageName)
+	for _, imp := range f.Imports {
+		if strings.Trim(imp.Path.Value, "\"") != path {
+			continue
+		}
+		if imp.Name != nil {
+			return imp.Name.Name
+		}
+		return g.PackageName
 	}
 
-	_ = astutil.AddImport(fset, f, pkgName)
+	used := map[string]bool{}
+	for _, imp := range f.Imports {
+		name := filepath.Base(strings.Trim(imp.Path.Value, "\""))
+		if imp.Name != nil {
+			name = imp.Name.Name
+		}
+		used[name] = true
+	}
+	qualifier := g.PackageName
+	if used[qualifier] {
+		base := qualifier + "route"
+		qualifier = base
+		for i := 2; used[qualifier]; i++ {
+			qualifier = base + strconv.Itoa(i)
+		}
+		_ = astutil.AddNamedImport(fset, f, qualifier, path)
+		return qualifier
+	}
+	_ = astutil.AddImport(fset, f, path)
+	return qualifier
 }
 
 func (g *Generator) checkFile(path string) error {

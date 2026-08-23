@@ -347,6 +347,11 @@ func tsPropertyName(name string) string {
 // tsFieldType renders the TS type of a struct field, preferring a resolved
 // enum literal union over the raw Go type string.
 func tsFieldType(field FieldInfo) string {
+	// Ent edges represent implementation relations rather than a stable API
+	// contract. Avoid recursively expanding the entire generated entity graph.
+	if field.FromEnt && field.Name == "Edges" {
+		return "Record<string, unknown>"
+	}
 	if field.Enum != nil {
 		union := tsEnumUnion(field.Enum)
 		base := strings.TrimSpace(field.Type)

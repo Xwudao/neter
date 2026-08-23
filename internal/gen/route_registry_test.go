@@ -1,6 +1,8 @@
 package gen
 
 import (
+	"go/parser"
+	"go/token"
 	"os"
 	"path/filepath"
 	"strings"
@@ -58,6 +60,31 @@ func NewRouteRegistry(userRoute *v1.UserRoute) RouteRegistry {
 	}
 }
 
+func TestAddPackageImportUsesAliasOnlyForCollision(t *testing.T) {
+	const source = `package routes
+
+import "example.com/project/internal/routes/ex"
+`
+	fset := token.NewFileSet()
+	f, err := parser.ParseFile(fset, "registry.go", source, parser.ParseComments)
+	if err != nil {
+		t.Fatal(err)
+	}
+	g := &Generator{PackageName: "ex", ModName: "example.com/project"}
+	if got := g.addPackageImport(fset, f); got != "ex" {
+		t.Fatalf("existing import qualifier = %q, want ex", got)
+	}
+
+	// The pre-existing import is deliberately named other, requiring a stable
+	// alias for a different generated package with the same natural name.
+	f.Imports[0].Name = nil
+	f.Imports[0].Path.Value = `"example.com/external/other"`
+	g.PackageName = "other"
+	if got := g.addPackageImport(fset, f); got != "otherroute" {
+		t.Fatalf("collision qualifier = %q, want otherroute", got)
+	}
+}
+
 func TestHasRouteRegistryLeavesLegacyProjectsOnTheExistingPath(t *testing.T) {
 	g := &Generator{RootPath: filepath.Join(t.TempDir(), "internal", "routes", "v1")}
 	if g.hasRouteRegistry() {
@@ -77,7 +104,7 @@ func TestHasRouterRegisterRequiresInjectedRegistry(t *testing.T) {
 
 import "github.com/gin-gonic/gin"
 
-type Registrar interface { Register(router gin.IRouter) }
+type Registrar interface { Register(gin.IRouter) }
 `), 0o644); err != nil {
 		t.Fatal(err)
 	}
@@ -112,6 +139,33 @@ func TestRouteTemplateKeepsEngineForLegacyGeneration(t *testing.T) {
 	}
 	if strings.Contains(source, "Register(router gin.IRouter)") {
 		t.Fatalf("legacy route unexpectedly uses router injection:\n%s", source)
+	}
+}
+
+func TestRouteTemplateUsesErrorTypedAPIWhenAvailable(t *testing.T) {
+	g := &Generator{
+		PackageName:       "v1",
+		ModName:           "example.com/project",
+		Name:              "health",
+		StructRouteName:   "HealthRoute",
+		UseRouteRegistry:  true,
+		UseRouterRegister: true,
+		UseTypedAPI:       true,
+		UseErrorTypedAPI:  true,
+	}
+	parsed, err := template.New("route").Parse(tpl.RouteTpl)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var rendered strings.Builder
+	if err := parsed.Execute(&rendered, g); err != nil {
+		t.Fatal(err)
+	}
+	source := rendered.String()
+	for _, want := range []string{"core.NoInputE(r.health)", "(string, error)"} {
+		if !strings.Contains(source, want) {
+			t.Fatalf("modern typed route is missing %q:\n%s", want, source)
+		}
 	}
 }
 

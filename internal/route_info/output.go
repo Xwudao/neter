@@ -6,6 +6,8 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+
+	"github.com/Xwudao/neter/pkg/utils"
 )
 
 // ─── JSON output ─────────────────────────────────────────────────────────────
@@ -23,7 +25,7 @@ func WriteJSON(routes *ProjectRoutes, outputPath string) error {
 		return fmt.Errorf("marshal json: %w", err)
 	}
 
-	if err := os.WriteFile(outputPath, data, 0644); err != nil {
+	if err := utils.WriteFileAtomic(outputPath, data, 0o644); err != nil {
 		return fmt.Errorf("write file: %w", err)
 	}
 
@@ -50,7 +52,7 @@ func WriteMarkdown(routes *ProjectRoutes, outputPath string) error {
 	}
 
 	content := generateMarkdown(routes)
-	if err := os.WriteFile(outputPath, []byte(content), 0644); err != nil {
+	if err := utils.WriteFileAtomic(outputPath, []byte(content), 0o644); err != nil {
 		return fmt.Errorf("write file: %w", err)
 	}
 
@@ -317,7 +319,7 @@ func WriteTerminal(routes *ProjectRoutes, outputPath string, cfg *TerminalConfig
 		b.WriteString("\n")
 	}
 
-	if err := os.WriteFile(outputPath, []byte(b.String()), 0644); err != nil {
+	if err := utils.WriteFileAtomic(outputPath, []byte(b.String()), 0o644); err != nil {
 		return fmt.Errorf("write file: %w", err)
 	}
 	return nil

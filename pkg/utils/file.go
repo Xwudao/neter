@@ -14,18 +14,50 @@ func SaveToFile(p string, cnt []byte, cover bool) (err error) {
 	if string(cnt) == "" {
 		return errors.New("write file: empty content")
 	}
+	if err := os.MkdirAll(filepath.Dir(p), 0o755); err != nil {
+		return fmt.Errorf("create parent directory: %w", err)
+	}
 	_, err = os.Stat(p)
 	if err == nil {
 		if !cover {
 			return fmt.Errorf("file [%s] existed, please rename or remove it", p)
 		}
 	}
-	err = os.WriteFile(p, cnt, os.ModePerm)
+	return WriteFileAtomic(p, cnt, 0o644)
+}
+
+// WriteFileAtomic writes content through a same-directory temporary file, so a
+// failed generator run cannot leave a partially written source artifact.
+func WriteFileAtomic(path string, content []byte, perm os.FileMode) error {
+	dir := filepath.Dir(path)
+	tmp, err := os.CreateTemp(dir, ".nr-*")
 	if err != nil {
-		return
+		return fmt.Errorf("create temporary file: %w", err)
+	}
+	tmpPath := tmp.Name()
+	defer os.Remove(tmpPath)
+
+	if _, err := tmp.Write(content); err != nil {
+		tmp.Close()
+		return fmt.Errorf("write temporary file: %w", err)
+	}
+	if err := tmp.Chmod(perm); err != nil {
+		tmp.Close()
+		return fmt.Errorf("set temporary file mode: %w", err)
+	}
+	if err := tmp.Sync(); err != nil {
+		tmp.Close()
+		return fmt.Errorf("sync temporary file: %w", err)
+	}
+	if err := tmp.Close(); err != nil {
+		return fmt.Errorf("close temporary file: %w", err)
+	}
+	if err := os.Rename(tmpPath, path); err != nil {
+		return fmt.Errorf("replace file atomically: %w", err)
 	}
 	return nil
 }
+
 func RemoveExt(filename string) string {
 	base := filepath.Base(filename)
 	ext := filepath.Ext(filename)

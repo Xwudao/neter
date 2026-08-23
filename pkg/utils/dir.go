@@ -69,24 +69,7 @@ func GetModName() (mod string) {
 	return
 }
 
+// FindModPath is retained for compatibility. Use FindProjectRoot in new code.
 func FindModPath(deep int) (string, error) {
-	var (
-		start = 0
-		max   = deep
-	)
-	for start < max {
-		start++
-		dir, err := os.Getwd()
-		if err != nil {
-			return "", err
-		}
-		fp := filepath.Join(dir, "go.mod")
-		_, err = os.Stat(fp)
-		if err != nil {
-			dir = filepath.Join(dir, "..")
-			continue
-		}
-		return dir, nil
-	}
-	return "", ErrNotFoundMod
+	return FindProjectRoot(deep)
 }

@@ -125,7 +125,7 @@ const postApiCreateCategory = (payload: PostAdminV1CategoryCreateBody) => {
    - **未解析枚举**：少数常量表达式无法静态求值（如引用函数返回值）的枚举仍是
      `unknown`，可按业务补充字面量联合
 
-4. 校验：`nr route-info gen-ts --check` 可接入 CI，路由变更后强制重新生成。
+4. 校验：`nr route-info gen-ts --check` 可接入 CI，路由变更后强制重新生成。校验同时会发现已删除路由遗留的、带 nr 生成文件头的 `.gen.ts` 文件；普通手写文件不会被删除。
 
 ## 生成器开发
 

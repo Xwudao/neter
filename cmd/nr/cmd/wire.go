@@ -4,26 +4,27 @@ Copyright © 2022 NAME HERE <EMAIL ADDRESS>
 package cmd
 
 import (
-	"log"
+	"errors"
+	"fmt"
 	"os"
 	"path/filepath"
+	"sort"
 
 	"github.com/spf13/cobra"
 
 	"github.com/Xwudao/neter/internal/core"
-	"github.com/Xwudao/neter/pkg/utils"
+	"github.com/Xwudao/neter/pkg/filex"
 )
 
-// wireCmd represents the wire command
 var wireCmd = &cobra.Command{
 	Use:   "wire",
-	Short: "wire the dependency",
-	Run: func(cmd *cobra.Command, args []string) {
+	Short: "regenerate dependency injection code for every wire.go below the current directory",
+	RunE: func(cmd *cobra.Command, _ []string) error {
 		base, err := os.Getwd()
 		if err != nil {
-			base = "."
+			return fmt.Errorf("get working directory: %w", err)
 		}
-		newWire(base).wire()
+		return newWire(base).wire()
 	},
 }
 
@@ -35,37 +36,35 @@ func newWire(baseDir string) *wire {
 	return &wire{baseDir: baseDir}
 }
 
-func (w *wire) wire() {
-	files := utils.LoadFiles(w.baseDir, func(filename string) bool {
+// wire regenerates every discovered injector and returns an error if any one
+// fails. CLI callers and generators can therefore rely on its exit status.
+func (w *wire) wire() error {
+	files, err := filex.LoadFiles(w.baseDir, func(filename string) bool {
 		return filepath.Base(filename) == "wire.go"
 	})
-	if len(files) == 0 {
-		log.Println("no wire.go file found")
-		return
+	if err != nil {
+		return fmt.Errorf("find wire files: %w", err)
 	}
+	if len(files) == 0 {
+		return fmt.Errorf("no wire.go file found below %s", w.baseDir)
+	}
+	sort.Strings(files)
 
+	var errs []error
 	for _, file := range files {
-		log.Printf("wire.go file found: %s\n", file)
 		dir := filepath.Dir(file)
-		if res, err := core.RunWithDir("wire", dir, nil, "gen"); err != nil {
-			log.Println(res)
-			log.Printf("wire gen error: %v\n", err)
+		if _, err := core.RunWithDir("wire", dir, nil, "gen"); err != nil {
+			errs = append(errs, fmt.Errorf("%s: %w", file, err))
 			continue
 		}
-		log.Println("wire gen success")
+		fmt.Printf("wire generated: %s\n", file)
 	}
+	if len(errs) > 0 {
+		return fmt.Errorf("Wire generation failed: %w", errors.Join(errs...))
+	}
+	return nil
 }
 
 func init() {
 	rootCmd.AddCommand(wireCmd)
-
-	// Here you will define your flags and configuration settings.
-
-	// Cobra supports Persistent Flags which will work for this command
-	// and all subcommands, e.g.:
-	// wireCmd.PersistentFlags().String("foo", "", "A help for foo")
-
-	// Cobra supports local flags which will only run when this command
-	// is called directly, e.g.:
-	// wireCmd.Flags().BoolP("toggle", "t", false, "Help message for toggle")
 }
