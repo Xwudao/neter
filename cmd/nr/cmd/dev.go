@@ -141,6 +141,7 @@ var devCmd = &cobra.Command{
 			return
 		}
 
+		setDevTerminalTitle()
 		log.Printf("[dev] backend: %s %v", backendName, backendArgs)
 		log.Printf("[dev] frontend: %s %v (dir=%s)", pm, frontendArgs, frontendPath)
 
@@ -153,6 +154,20 @@ var devCmd = &cobra.Command{
 			log.Fatalf("dev command failed: %v", err)
 		}
 	},
+}
+
+func devTerminalTitle(projectDir string) string {
+	projectName := filepath.Base(filepath.Clean(projectDir))
+	projectName = strings.Map(func(r rune) rune {
+		if r < 0x20 || r == 0x7f {
+			return -1
+		}
+		return r
+	}, projectName)
+	if projectName == "" || projectName == "." {
+		return "nr dev"
+	}
+	return fmt.Sprintf("nr dev · %s", projectName)
 }
 
 func buildDevBackendCommand(backendCmd string) (string, []string, error) {

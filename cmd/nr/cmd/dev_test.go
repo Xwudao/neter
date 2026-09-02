@@ -40,6 +40,15 @@ func TestBuildDevBackendCommandCustom(t *testing.T) {
 	}
 }
 
+func TestDevTerminalTitle(t *testing.T) {
+	if got, want := devTerminalTitle("/Users/tim/Codes/go/neter"), "nr dev · neter"; got != want {
+		t.Fatalf("expected title %q, got %q", want, got)
+	}
+	if got, want := devTerminalTitle("/tmp/bad\x1b-title"), "nr dev · bad-title"; got != want {
+		t.Fatalf("expected sanitized title %q, got %q", want, got)
+	}
+}
+
 func TestFormatDevOutputLine(t *testing.T) {
 	line := formatDevOutputLine("backend", devColorBlue, "server started")
 
