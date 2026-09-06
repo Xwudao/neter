@@ -17,6 +17,7 @@ func TestExampleNeterConfigYAMLContainsAllSupportedSections(t *testing.T) {
 		`tags:`,
 		`- prod`,
 		`cgo: false`,
+		`stop_copy: false`,
 		"dev:",
 		"backend:",
 		`cmd: "nr run -dr"`,

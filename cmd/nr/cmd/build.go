@@ -126,7 +126,7 @@ var buildCmd = &cobra.Command{
 			webStart := time.Now()
 			logCommandPhaseStart("web", "build web", webStart)
 			webDir, resolvedPm := resolveFrontendOptions(pm, cmd.Flags().Changed("pm"))
-			checkErr(buildWebAssets(webDir, resolvedPm))
+			checkErr(buildWebAssets(webDir, resolvedPm, neterCfg.StopCopyWeb()))
 			logCommandPhaseDone("web", "build web", webStart, time.Now())
 		}
 

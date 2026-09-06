@@ -71,6 +71,25 @@ func TestParseBuildConfigYAML(t *testing.T) {
 	if *cfg.Build.Cgo {
 		t.Fatalf("Build.Cgo = true, want false")
 	}
+	if cfg.Build.StopCopy {
+		t.Fatalf("Build.StopCopy = true, want false")
+	}
+}
+
+func TestParseBuildConfigYAMLStopCopy(t *testing.T) {
+	var cfg NeterConfig
+	src := `build:
+  stop_copy: true
+`
+	if err := yaml.Unmarshal([]byte(src), &cfg); err != nil {
+		t.Fatalf("yaml.Unmarshal error = %v", err)
+	}
+	if !cfg.Build.StopCopy {
+		t.Fatalf("Build.StopCopy = false, want true")
+	}
+	if !cfg.StopCopyWeb() {
+		t.Fatalf("StopCopyWeb() = false, want true")
+	}
 }
 
 func TestParseBuildConfigYAMLDefaults(t *testing.T) {
@@ -83,6 +102,9 @@ func TestParseBuildConfigYAMLDefaults(t *testing.T) {
 	}
 	if len(cfg.Build.Tags) != 0 {
 		t.Fatalf("Build.Tags = %v, want empty", cfg.Build.Tags)
+	}
+	if cfg.Build.StopCopy {
+		t.Fatalf("Build.StopCopy = true, want false")
 	}
 }
 
@@ -126,6 +148,26 @@ func TestGoBuildEnv(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			if got := tt.cfg.GoBuildEnv(); !reflect.DeepEqual(got, tt.want) {
 				t.Fatalf("GoBuildEnv() = %v, want %v", got, tt.want)
+			}
+		})
+	}
+}
+
+func TestStopCopyWeb(t *testing.T) {
+	tests := []struct {
+		name string
+		cfg  *NeterConfig
+		want bool
+	}{
+		{name: "nil config", cfg: nil, want: false},
+		{name: "stop_copy unset", cfg: &NeterConfig{}, want: false},
+		{name: "stop_copy enabled", cfg: &NeterConfig{Build: BuildConfig{StopCopy: true}}, want: true},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := tt.cfg.StopCopyWeb(); got != tt.want {
+				t.Fatalf("StopCopyWeb() = %v, want %v", got, tt.want)
 			}
 		})
 	}

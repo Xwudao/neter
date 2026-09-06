@@ -67,6 +67,11 @@ type BuildConfig struct {
 	// nil means "not configured", leaving the toolchain default.
 	// true => CGO_ENABLED=1, false => CGO_ENABLED=0.
 	Cgo *bool `yaml:"cgo,omitempty"`
+	// StopCopy, when true, skips copying the generated <webDir>/dist/
+	// directory to ./assets/dist/ after a web build (nr run --web /
+	// nr build --web). Useful when the frontend build outputs straight to
+	// assets/ and should not be copied again.
+	StopCopy bool `yaml:"stop_copy,omitempty"`
 }
 
 // NeterConfig represents the neter.yml project build configuration.
@@ -181,12 +186,14 @@ ldflags:
       timestampMs: "${timestamp_ms}"
 
 # build.tags are passed to go build -tags ...; build.cgo controls CGO_ENABLED
-# for nr build / nr run (and therefore nr dev).
+# for nr build / nr run (and therefore nr dev). build.stop_copy, when true,
+# skips copying the generated <web>/dist/ to ./assets/dist/ after a web build.
 build:
   tags:
     - prod
     - netpoll
   cgo: false
+  stop_copy: false
 
 dev:
   backend:
@@ -271,6 +278,16 @@ func (c *NeterConfig) GoBuildEnv() []string {
 		return []string{"CGO_ENABLED=1"}
 	}
 	return []string{"CGO_ENABLED=0"}
+}
+
+// StopCopyWeb reports whether the web build should skip copying the generated
+// <webDir>/dist/ directory to ./assets/dist/ (neter.yml build.stop_copy). The
+// receiver may be nil.
+func (c *NeterConfig) StopCopyWeb() bool {
+	if c == nil {
+		return false
+	}
+	return c.Build.StopCopy
 }
 
 // expandVars resolves ${VAR} placeholders in s.

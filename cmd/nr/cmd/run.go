@@ -75,20 +75,20 @@ var runCmd = &cobra.Command{
 			logCommandSuccess("run", "removed build/")
 		}
 
-		// build web
-		if web {
-			webDir, resolvedPm := resolveFrontendOptions(pm, cmd.Flags().Changed("pm"))
-			checkErr(buildWebAssets(webDir, resolvedPm))
-		}
-
-		// generate app
-		logCommandStep("run", "building binary from %s", buildPath)
-
-		// Load neter.yml (optional) so build tags / cgo can be applied to go build.
+		// Load neter.yml (optional) so build tags / cgo / stop_copy can be applied.
 		neterCfg, cfgErr := core.LoadOptionalNeterConfig()
 		if cfgErr != nil {
 			logCommandWarn("neter", "%v", cfgErr)
 		}
+
+		// build web
+		if web {
+			webDir, resolvedPm := resolveFrontendOptions(pm, cmd.Flags().Changed("pm"))
+			checkErr(buildWebAssets(webDir, resolvedPm, neterCfg.StopCopyWeb()))
+		}
+
+		// generate app
+		logCommandStep("run", "building binary from %s", buildPath)
 
 		var buildArgs = []string{"build", "-o", name}
 		if tags := neterCfg.BuildTags(); tags != "" {
