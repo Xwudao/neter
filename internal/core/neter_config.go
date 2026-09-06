@@ -58,9 +58,21 @@ type DeployConfig struct {
 	RemoteScript    string `yaml:"remote_script"`
 }
 
+// BuildConfig holds the go build related settings from neter.yml.
+type BuildConfig struct {
+	// Tags are passed to `go build -tags <tags>`. They enable build-time
+	// features (e.g. `-tags tk,prod`).
+	Tags []string `yaml:"tags"`
+	// Cgo controls the CGO_ENABLED environment variable for go build.
+	// nil means "not configured", leaving the toolchain default.
+	// true => CGO_ENABLED=1, false => CGO_ENABLED=0.
+	Cgo *bool `yaml:"cgo,omitempty"`
+}
+
 // NeterConfig represents the neter.yml project build configuration.
 type NeterConfig struct {
 	Ldflags []LdflagVar  `yaml:"ldflags"`
+	Build   BuildConfig  `yaml:"build"`
 	Dev     DevConfig    `yaml:"dev"`
 	Hooks   HooksConfig  `yaml:"hooks"`
 	Deploy  DeployConfig `yaml:"deploy"`
@@ -168,6 +180,14 @@ ldflags:
       date: "${date}"
       timestampMs: "${timestamp_ms}"
 
+# build.tags are passed to go build -tags ...; build.cgo controls CGO_ENABLED
+# for nr build / nr run (and therefore nr dev).
+build:
+  tags:
+    - prod
+    - netpoll
+  cgo: false
+
 dev:
   backend:
     cmd: "nr run -dr"
@@ -230,6 +250,27 @@ func (c *NeterConfig) BuildLdflags() string {
 	}
 
 	return strings.Join(parts, " ")
+}
+
+// BuildTags returns the comma-joined -tags value for go build, or "" if none
+// are configured. The receiver may be nil.
+func (c *NeterConfig) BuildTags() string {
+	if c == nil || len(c.Build.Tags) == 0 {
+		return ""
+	}
+	return strings.Join(c.Build.Tags, ",")
+}
+
+// GoBuildEnv returns the extra env vars for go build derived from the cgo
+// setting. It returns nil when cgo is not configured. The receiver may be nil.
+func (c *NeterConfig) GoBuildEnv() []string {
+	if c == nil || c.Build.Cgo == nil {
+		return nil
+	}
+	if *c.Build.Cgo {
+		return []string{"CGO_ENABLED=1"}
+	}
+	return []string{"CGO_ENABLED=0"}
 }
 
 // expandVars resolves ${VAR} placeholders in s.

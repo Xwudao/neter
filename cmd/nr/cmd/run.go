@@ -83,9 +83,20 @@ var runCmd = &cobra.Command{
 
 		// generate app
 		logCommandStep("run", "building binary from %s", buildPath)
+
+		// Load neter.yml (optional) so build tags / cgo can be applied to go build.
+		neterCfg, cfgErr := core.LoadOptionalNeterConfig()
+		if cfgErr != nil {
+			logCommandWarn("neter", "%v", cfgErr)
+		}
+
 		var buildArgs = []string{"build", "-o", name}
+		if tags := neterCfg.BuildTags(); tags != "" {
+			buildArgs = append(buildArgs, "-tags", tags)
+			logCommandSuccess("neter", "injected build tags from neter.yml: %s", tags)
+		}
 		buildArgs = append(buildArgs, buildPath)
-		if res, err = core.RunWithDir("go", "", nil, buildArgs...); err != nil {
+		if res, err = core.RunWithDir("go", "", neterCfg.GoBuildEnv(), buildArgs...); err != nil {
 			logCommandOutput("run", "go build output", res)
 			log.Fatalf("[run] go build failed: %v", err)
 			return

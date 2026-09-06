@@ -111,16 +111,15 @@ var buildCmd = &cobra.Command{
 		}
 		logCommandStep("build", "app=%s arch=%s", appRoot, arch)
 
-		var neterCfg *core.NeterConfig
-		if trim || deploy {
-			neterCfg, err = core.LoadNeterConfig()
-			if err != nil {
-				if deploy {
-					log.Fatalf("[deploy] load neter.yml failed: %v", err)
-					return
-				}
-				logCommandWarn("neter", "%v", err)
+		// Load neter.yml (optional) so build tags / cgo / ldflags can be applied
+		// to the go build. Always required for --deploy.
+		neterCfg, err := core.LoadOptionalNeterConfig()
+		if err != nil {
+			if deploy {
+				log.Fatalf("[deploy] load neter.yml failed: %v", err)
+				return
 			}
+			logCommandWarn("neter", "%v", err)
 		}
 
 		if web {
@@ -173,6 +172,12 @@ var buildCmd = &cobra.Command{
 				}
 				var buildArgs = []string{"build"}
 
+				// Append build tags from neter.yml
+				if tags := neterCfg.BuildTags(); tags != "" {
+					buildArgs = append(buildArgs, "-tags", tags)
+					logCommandSuccess("neter", "injected build tags from neter.yml: %s", tags)
+				}
+
 				var ldflags bytes.Buffer
 				ldflags.WriteString(`-ldflags=-s -w -extldflags '-static'`)
 
@@ -200,7 +205,13 @@ var buildCmd = &cobra.Command{
 					err error
 				)
 
-				if res, err = core.RunWithDir("go", "", c.Env, buildArgs...); err != nil {
+				// Merge cgo env from neter.yml with the platform env vars.
+				env := c.Env
+				if cgoEnv := neterCfg.GoBuildEnv(); len(cgoEnv) > 0 {
+					env = append(env, cgoEnv...)
+				}
+
+				if res, err = core.RunWithDir("go", "", env, buildArgs...); err != nil {
 					logCommandOutput("build", "go build output", res)
 					log.Fatalf("[build] go build failed: %v", err)
 					return

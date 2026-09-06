@@ -1,6 +1,11 @@
 package core
 
-import "testing"
+import (
+	"reflect"
+	"testing"
+
+	"gopkg.in/yaml.v3"
+)
 
 func TestEffectiveDevConfigDefaults(t *testing.T) {
 	cfg := (*NeterConfig)(nil).EffectiveDevConfig()
@@ -42,6 +47,87 @@ func TestEffectiveDevConfigOverrides(t *testing.T) {
 	}
 	if cfg.Frontend.Cmd != "run start" {
 		t.Fatalf("unexpected frontend cmd: %q", cfg.Frontend.Cmd)
+	}
+}
+
+func TestParseBuildConfigYAML(t *testing.T) {
+	var cfg NeterConfig
+	src := `build:
+  tags:
+    - prod
+    - netpoll
+  cgo: false
+`
+	if err := yaml.Unmarshal([]byte(src), &cfg); err != nil {
+		t.Fatalf("yaml.Unmarshal error = %v", err)
+	}
+
+	if !reflect.DeepEqual(cfg.Build.Tags, []string{"prod", "netpoll"}) {
+		t.Fatalf("Build.Tags = %v, want [prod netpoll]", cfg.Build.Tags)
+	}
+	if cfg.Build.Cgo == nil {
+		t.Fatalf("Build.Cgo is nil, want non-nil (false)")
+	}
+	if *cfg.Build.Cgo {
+		t.Fatalf("Build.Cgo = true, want false")
+	}
+}
+
+func TestParseBuildConfigYAMLDefaults(t *testing.T) {
+	var cfg NeterConfig
+	if err := yaml.Unmarshal([]byte("ldflags: []\n"), &cfg); err != nil {
+		t.Fatalf("yaml.Unmarshal error = %v", err)
+	}
+	if cfg.Build.Cgo != nil {
+		t.Fatalf("Build.Cgo = %v, want nil", cfg.Build.Cgo)
+	}
+	if len(cfg.Build.Tags) != 0 {
+		t.Fatalf("Build.Tags = %v, want empty", cfg.Build.Tags)
+	}
+}
+
+func TestBuildTags(t *testing.T) {
+	tests := []struct {
+		name string
+		cfg  *NeterConfig
+		want string
+	}{
+		{name: "nil config", cfg: nil, want: ""},
+		{name: "no tags", cfg: &NeterConfig{}, want: ""},
+		{name: "single tag", cfg: &NeterConfig{Build: BuildConfig{Tags: []string{"prod"}}}, want: "prod"},
+		{name: "multiple tags", cfg: &NeterConfig{Build: BuildConfig{Tags: []string{"prod", "netpoll"}}}, want: "prod,netpoll"},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := tt.cfg.BuildTags(); got != tt.want {
+				t.Fatalf("BuildTags() = %q, want %q", got, tt.want)
+			}
+		})
+	}
+}
+
+func TestGoBuildEnv(t *testing.T) {
+	noCgo := false
+	yesCgo := true
+
+	tests := []struct {
+		name string
+		cfg  *NeterConfig
+		want []string
+	}{
+		{name: "nil config", cfg: nil, want: nil},
+		{name: "cgo unset", cfg: &NeterConfig{}, want: nil},
+		{name: "cgo enabled", cfg: &NeterConfig{Build: BuildConfig{Cgo: &yesCgo}}, want: []string{"CGO_ENABLED=1"}},
+		{name: "cgo disabled", cfg: &NeterConfig{Build: BuildConfig{Cgo: &noCgo}}, want: []string{"CGO_ENABLED=0"}},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := tt.cfg.GoBuildEnv(); !reflect.DeepEqual(got, tt.want) {
+				t.Fatalf("GoBuildEnv() = %v, want %v", got, tt.want)
+			}
+		})
 	}
 }
 
