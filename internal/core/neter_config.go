@@ -44,6 +44,7 @@ type HooksConfig struct {
 type HookItemConfig struct {
 	Event     string             `yaml:"event"`
 	Action    string             `yaml:"action"`
+	Env       map[string]string  `yaml:"env,omitempty"`
 	Platforms []string           `yaml:"platforms,omitempty"`
 	Depends   *HookDependsConfig `yaml:"depends,omitempty"`
 }
@@ -210,6 +211,8 @@ hooks:
   items:
     - event: "on_start"
       action: "scripts/pre_build.sh"
+      env:
+        APP_ENV: "production"
       depends:
         flags: ["--web"]
     - event: "on_start"

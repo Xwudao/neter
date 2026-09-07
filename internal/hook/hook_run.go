@@ -22,6 +22,8 @@ hooks:
 	items:
 		- event: "on_start"
 		  action: "scripts/pre_build.sh"
+		  env:
+		    APP_ENV: "production"
 		  depends:
 		    flags: ["--web"]
 
@@ -44,10 +46,11 @@ type AppConfig struct {
 }
 
 type HookItem struct {
-	Event     string       `yaml:"event"`
-	Action    string       `yaml:"action"`
-	Platforms []string     `yaml:"platforms,omitempty"`
-	Depends   *HookDepends `yaml:"depends,omitempty"`
+	Event     string            `yaml:"event"`
+	Action    string            `yaml:"action"`
+	Env       map[string]string `yaml:"env,omitempty"`
+	Platforms []string          `yaml:"platforms,omitempty"`
+	Depends   *HookDepends      `yaml:"depends,omitempty"`
 }
 
 type HookDepends struct {
@@ -118,7 +121,7 @@ func (h *HookManager) ExecuteHooks(event string) error {
 			}
 
 			log.Printf("[hook] executing %s hook: %s", event, hook.Action)
-			if err := h.executeCommand(hook.Action); err != nil {
+			if err := h.executeCommand(hook.Action, hook.Env); err != nil {
 				return fmt.Errorf("failed to execute %s hook: %v", event, err)
 			}
 		}
@@ -203,6 +206,7 @@ func hookConfigFromNeter(cfg core.HooksConfig) HookConfig {
 		items = append(items, HookItem{
 			Event:     item.Event,
 			Action:    item.Action,
+			Env:       cloneEnv(item.Env),
 			Platforms: item.Platforms,
 			Depends:   depends,
 		})
@@ -253,7 +257,18 @@ func (h *HookManager) loadLegacyConfig(configPath string) error {
 	return nil
 }
 
-func (h *HookManager) executeCommand(action string) error {
+func cloneEnv(env map[string]string) map[string]string {
+	if env == nil {
+		return nil
+	}
+	cloned := make(map[string]string, len(env))
+	for key, value := range env {
+		cloned[key] = value
+	}
+	return cloned
+}
+
+func (h *HookManager) executeCommand(action string, env map[string]string) error {
 	if action == "" {
 		return nil
 	}
@@ -292,8 +307,28 @@ func (h *HookManager) executeCommand(action string) error {
 	}
 
 	cmd.Dir, _ = os.Getwd()
+	cmd.Env = commandEnv(env)
 	cmd.Stdout = os.Stdout
 	cmd.Stderr = os.Stderr
 
 	return cmd.Run()
+}
+
+// commandEnv overlays hook-specific variables onto the current process environment.
+func commandEnv(overrides map[string]string) []string {
+	if len(overrides) == 0 {
+		return os.Environ()
+	}
+
+	env := os.Environ()
+	for key, value := range overrides {
+		prefix := key + "="
+		for i := len(env) - 1; i >= 0; i-- {
+			if strings.HasPrefix(env[i], prefix) {
+				env = append(env[:i], env[i+1:]...)
+			}
+		}
+		env = append(env, prefix+value)
+	}
+	return env
 }

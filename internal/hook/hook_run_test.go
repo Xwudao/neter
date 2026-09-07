@@ -164,6 +164,8 @@ func TestLoadConfigFromNeterYAML(t *testing.T) {
   items:
     - event: "on_start"
       action: "echo test"
+      env:
+        APP_ENV: "test"
       depends:
         flags: ["--web"]
 `)
@@ -188,6 +190,19 @@ func TestLoadConfigFromNeterYAML(t *testing.T) {
 	if manager.config.App.Hooks[0].Event != "on_start" {
 		t.Fatalf("expected event on_start, got %q", manager.config.App.Hooks[0].Event)
 	}
+	if got := manager.config.App.Hooks[0].Env["APP_ENV"]; got != "test" {
+		t.Fatalf("expected APP_ENV=test, got %q", got)
+	}
+}
+
+func TestCommandEnvOverlaysVariables(t *testing.T) {
+	env := commandEnv(map[string]string{"NETER_HOOK_TEST": "hook-value"})
+	for _, entry := range env {
+		if entry == "NETER_HOOK_TEST=hook-value" {
+			return
+		}
+	}
+	t.Fatalf("hook environment did not contain overridden variable: %v", env)
 }
 
 func TestLoadConfigWarnsWhenLegacyHookRunExists(t *testing.T) {

@@ -21,8 +21,10 @@ import (
 	"time"
 
 	"github.com/spf13/cobra"
+	"github.com/spf13/pflag"
 
 	"github.com/Xwudao/neter/internal/core"
+	"github.com/Xwudao/neter/internal/hook"
 	"github.com/Xwudao/neter/pkg/parser"
 )
 
@@ -140,6 +142,26 @@ var devCmd = &cobra.Command{
 			log.Fatal("frontend command cannot be empty")
 			return
 		}
+
+		hookManager := hook.NewHookManager()
+		if err := hookManager.LoadConfig(); err != nil {
+			log.Printf("[hook] %v", err)
+		}
+		var activeFlags []string
+		cmd.Flags().VisitAll(func(f *pflag.Flag) {
+			if f.Changed {
+				activeFlags = append(activeFlags, fmt.Sprintf("--%s", f.Name))
+			}
+		})
+		hookManager.SetActiveFlags(activeFlags)
+		if err := hookManager.ExecuteHooks("on_start"); err != nil {
+			log.Printf("[hook] %v", err)
+		}
+		defer func() {
+			if err := hookManager.ExecuteHooks("on_stop"); err != nil {
+				log.Printf("[hook] %v", err)
+			}
+		}()
 
 		setDevTerminalTitle()
 		log.Printf("[dev] backend: %s %v", backendName, backendArgs)
