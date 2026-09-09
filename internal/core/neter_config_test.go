@@ -10,6 +10,9 @@ import (
 func TestEffectiveDevConfigDefaults(t *testing.T) {
 	cfg := (*NeterConfig)(nil).EffectiveDevConfig()
 
+	if cfg.Backend.Dir != "" {
+		t.Fatalf("expected empty backend dir, got %q", cfg.Backend.Dir)
+	}
 	if cfg.Backend.Cmd != "" {
 		t.Fatalf("expected empty backend cmd, got %q", cfg.Backend.Cmd)
 	}
@@ -27,7 +30,7 @@ func TestEffectiveDevConfigDefaults(t *testing.T) {
 func TestEffectiveDevConfigOverrides(t *testing.T) {
 	cfg := (&NeterConfig{
 		Dev: DevConfig{
-			Backend: DevBackendConfig{Cmd: "nr run -dr --dir app/admin"},
+			Backend: DevBackendConfig{Dir: "cmd/admin", Cmd: "nr run -dr --dir cmd/admin"},
 			Frontend: DevFrontendConfig{
 				Dir: "client",
 				Pm:  "bun",
@@ -36,7 +39,10 @@ func TestEffectiveDevConfigOverrides(t *testing.T) {
 		},
 	}).EffectiveDevConfig()
 
-	if cfg.Backend.Cmd != "nr run -dr --dir app/admin" {
+	if cfg.Backend.Dir != "cmd/admin" {
+		t.Fatalf("unexpected backend dir: %q", cfg.Backend.Dir)
+	}
+	if cfg.Backend.Cmd != "nr run -dr --dir cmd/admin" {
 		t.Fatalf("unexpected backend cmd: %q", cfg.Backend.Cmd)
 	}
 	if cfg.Frontend.Dir != "client" {

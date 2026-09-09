@@ -101,12 +101,16 @@ var devCmd = &cobra.Command{
 		devCfg := cfg.EffectiveDevConfig()
 
 		backendCmd, _ := cmd.Flags().GetString("backend-cmd")
+		backendDir, _ := cmd.Flags().GetString("backend-dir")
 		frontendDir, _ := cmd.Flags().GetString("frontend-dir")
 		pm, _ := cmd.Flags().GetString("pm")
 		frontendCmd, _ := cmd.Flags().GetString("frontend-cmd")
 
 		if !cmd.Flags().Changed("backend-cmd") {
 			backendCmd = devCfg.Backend.Cmd
+		}
+		if !cmd.Flags().Changed("backend-dir") {
+			backendDir = devCfg.Backend.Dir
 		}
 		if !cmd.Flags().Changed("frontend-dir") {
 			frontendDir = devCfg.Frontend.Dir
@@ -121,7 +125,7 @@ var devCmd = &cobra.Command{
 		ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 		defer stop()
 
-		backendName, backendArgs, err := buildDevBackendCommand(backendCmd)
+		backendName, backendArgs, err := buildDevBackendCommand(backendCmd, backendDir)
 		if err != nil {
 			log.Fatalf("invalid backend command: %v", err)
 			return
@@ -192,13 +196,17 @@ func devTerminalTitle(projectDir string) string {
 	return fmt.Sprintf("nr dev · %s", projectName)
 }
 
-func buildDevBackendCommand(backendCmd string) (string, []string, error) {
+func buildDevBackendCommand(backendCmd, backendDir string) (string, []string, error) {
 	if backendCmd == "" {
 		exePath, err := os.Executable()
 		if err != nil {
 			return "", nil, err
 		}
-		return exePath, []string{"run", "-dr"}, nil
+		args := []string{"run", "-dr"}
+		if backendDir != "" {
+			args = append(args, "--dir", backendDir)
+		}
+		return exePath, args, nil
 	}
 
 	args := parser.GetArgs(backendCmd)
@@ -646,6 +654,7 @@ func init() {
 	rootCmd.AddCommand(devCmd)
 
 	devCmd.Flags().String("backend-cmd", "", "backend development command, default is current nr binary with `run -dr`")
+	devCmd.Flags().String("backend-dir", "", "backend application directory, passed to the default backend command")
 	devCmd.Flags().String("frontend-dir", "web", "frontend development directory")
 	devCmd.Flags().String("pm", "pnpm", "frontend package manager")
 	devCmd.Flags().String("frontend-cmd", "run dev", "frontend development command arguments")

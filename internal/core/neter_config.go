@@ -27,6 +27,9 @@ type DevConfig struct {
 }
 
 type DevBackendConfig struct {
+	// Dir selects the application directory passed to the default `nr run -dr`
+	// backend command when a project has multiple cmd applications.
+	Dir string `yaml:"dir"`
 	Cmd string `yaml:"cmd"`
 }
 
@@ -155,6 +158,9 @@ func (c *NeterConfig) EffectiveDevConfig() DevConfig {
 		return cfg
 	}
 
+	if c.Dev.Backend.Dir != "" {
+		cfg.Backend.Dir = c.Dev.Backend.Dir
+	}
 	if c.Dev.Backend.Cmd != "" {
 		cfg.Backend.Cmd = c.Dev.Backend.Cmd
 	}
@@ -198,7 +204,11 @@ build:
 
 dev:
   backend:
-    cmd: "nr run -dr"
+    # Choose this application without showing the interactive cmd-directory prompt.
+    # Used by the default backend command: nr run -dr --dir cmd/app
+    dir: "cmd/app"
+    # Set cmd only to replace the default backend command entirely.
+    # cmd: "air"
   # frontend.dir/pm also apply to "nr build --web" / "nr run --web"
   # and to the default output of "nr route-info gen-ts" (<dir>/src/api/generated)
   frontend:

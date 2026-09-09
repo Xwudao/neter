@@ -9,7 +9,7 @@ import (
 )
 
 func TestBuildDevBackendCommandDefault(t *testing.T) {
-	name, args, err := buildDevBackendCommand("")
+	name, args, err := buildDevBackendCommand("", "")
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -27,7 +27,7 @@ func TestBuildDevBackendCommandDefault(t *testing.T) {
 }
 
 func TestBuildDevBackendCommandCustom(t *testing.T) {
-	name, args, err := buildDevBackendCommand("nr run -dr --dir app/admin")
+	name, args, err := buildDevBackendCommand("nr run -dr --dir app/admin", "cmd/ignored")
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -37,6 +37,16 @@ func TestBuildDevBackendCommandCustom(t *testing.T) {
 	}
 	if len(args) != 4 || args[0] != "run" || args[1] != "-dr" || args[2] != "--dir" || args[3] != "app/admin" {
 		t.Fatalf("unexpected args: %#v", args)
+	}
+}
+
+func TestBuildDevBackendCommandUsesConfiguredDirectory(t *testing.T) {
+	_, args, err := buildDevBackendCommand("", "cmd/admin")
+	if err != nil {
+		t.Fatalf("buildDevBackendCommand() error = %v", err)
+	}
+	if got, want := strings.Join(args, " "), "run -dr --dir cmd/admin"; got != want {
+		t.Fatalf("backend args = %q, want %q", got, want)
 	}
 }
 
