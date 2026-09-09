@@ -193,6 +193,15 @@ func checkErr(err error) {
 	utils.CheckErrWithStatus(err)
 }
 
+// requireEntProject rejects Ent-only commands on a new PostgreSQL + sqlc
+// project, pointing the user at the migration workflow instead.
+func requireEntProject() error {
+	if core.DetectCurrentProjectKind().IsSQLC() {
+		return fmt.Errorf("this is a PostgreSQL + sqlc project; use `nr migrate new <name>` to add a migration and author SQL in db/query")
+	}
+	return nil
+}
+
 func normalizeCommandPath(path string) string {
 	return strings.TrimSuffix(filepath.ToSlash(path), "/")
 }

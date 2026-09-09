@@ -15,6 +15,10 @@ var newCmd = &cobra.Command{
 	Short: "new ent schema",
 	Long:  `new ent schema`,
 	Run: func(cmd *cobra.Command, args []string) {
+		if err := requireEntProject(); err != nil {
+			checkErr(err)
+			return
+		}
 		if len(args) == 0 {
 			fmt.Println("eg: new User Group ")
 			return

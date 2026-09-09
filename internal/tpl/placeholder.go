@@ -8,8 +8,14 @@ var RouteTpl string
 //go:embed biz.tpl
 var BizTpl string
 
+//go:embed biz_sqlc.tpl
+var BizSQLCTpl string
+
 //go:embed biz_iface.tpl
 var BizIfaceTpl string
+
+//go:embed biz_iface_sqlc.tpl
+var BizIfaceSQLCTpl string
 
 //go:embed biz_params.tpl
 var BizParamsTpl string
@@ -19,6 +25,9 @@ var BizContractTpl string
 
 //go:embed repo.tpl
 var RepoTpl string
+
+//go:embed repo_sqlc.tpl
+var RepoSQLCTpl string
 
 //go:embed cmd.tpl
 var CmdTpl string

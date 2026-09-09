@@ -23,7 +23,7 @@ const (
 	genTypeBiz   = "biz"
 )
 
-var legacyGenFlagNames = []string{"type", "name", "no-repo", "v2", "with-crud", "with-params", "with-iface", "with-contracts", "ent-name", "pkg", "skip-wire"}
+var legacyGenFlagNames = []string{"type", "name", "no-repo", "v2", "with-crud", "with-params", "with-iface", "with-contracts", "ent-name", "model", "plural", "pkg", "skip-wire"}
 
 var genCmd = &cobra.Command{
 	Use:   "gen",
@@ -100,6 +100,8 @@ func newGenRequest(cmd *cobra.Command, typeName string) (internalgen.Request, er
 		req.WithIface, _ = cmd.Flags().GetBool("with-iface")
 		req.WithContracts, _ = cmd.Flags().GetBool("with-contracts")
 		req.EntName, _ = cmd.Flags().GetString("ent-name")
+		req.Model, _ = cmd.Flags().GetString("model")
+		req.Plural, _ = cmd.Flags().GetString("plural")
 	case "":
 		return internalgen.Request{}, errors.New("please specify a generator type")
 	default:
@@ -128,6 +130,8 @@ func bindBizFlags(flags *pflag.FlagSet) {
 	flags.Bool("with-iface", false, "generate a _biz_iface.go file and add a mockgen directive to mocks/mock_gen.go")
 	flags.Bool("with-contracts", false, "generate transport-neutral Command/Query types for the biz layer")
 	flags.String("ent-name", "", "generate crud section's ent name")
+	flags.String("model", "", "sqlc model name for --with-crud on a new project (e.g. User); alias of --ent-name")
+	flags.String("plural", "", "sqlc list method plural for --with-crud (default <Model>s)")
 }
 
 func hideLegacyGenFlags(cmd *cobra.Command) {
@@ -141,6 +145,10 @@ var genEntCmd = &cobra.Command{
 	Short: "generate entity",
 	Long:  `generate entity`,
 	Run: func(cmd *cobra.Command, args []string) {
+		if err := requireEntProject(); err != nil {
+			utils.CheckErrWithStatus(err)
+			return
+		}
 		log.SetPrefix("[gen] ")
 		dir, _ := os.Getwd()
 

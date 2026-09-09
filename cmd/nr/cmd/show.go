@@ -26,6 +26,10 @@ var showCmd = &cobra.Command{
 
 		switch arg {
 		case "ent":
+			if err := requireEntProject(); err != nil {
+				checkErr(err)
+				return
+			}
 			s.ShowEnt()
 		}
 

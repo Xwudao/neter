@@ -18,6 +18,7 @@ import (
 	"github.com/iancoleman/strcase"
 	"golang.org/x/tools/go/ast/astutil"
 
+	"github.com/Xwudao/neter/internal/core"
 	"github.com/Xwudao/neter/internal/tpl"
 	"github.com/Xwudao/neter/internal/visitor"
 	"github.com/Xwudao/neter/pkg/utils"
@@ -34,6 +35,10 @@ type Generator struct {
 	WithIface     bool // generate _biz_iface.go + mockgen directive
 	WithContracts bool // generate business Command/Query contracts
 	EntName       string
+	Model         string // sqlc model name (e.g. User)
+	Plural        string // sqlc list method plural (e.g. Users)
+	Table         string // sqlc table name (e.g. users)
+	IsSQLC        bool   // project uses the new PostgreSQL + sqlc stack
 	V2            bool
 
 	routeTpl       string
@@ -42,6 +47,10 @@ type Generator struct {
 	repoTpl        string
 	bizParamsTpl   string
 	bizContractTpl string
+
+	bizSQLCTpl      string
+	bizIfaceSQLCTpl string
+	repoSQLCTpl     string
 
 	FilenameRouteSuffix string
 	FilenameBizSuffix   string
@@ -87,6 +96,8 @@ type Request struct {
 	WithIface     bool // generate a _biz_iface.go file and add a mockgen directive
 	WithContracts bool // generate Command/Query types for transport-neutral biz APIs
 	EntName       string
+	Model         string // sqlc model name (e.g. User); alias of EntName on new projects
+	Plural        string // sqlc list method plural (default <Model>s)
 	V2            bool
 	SkipWire      bool
 }
@@ -100,6 +111,8 @@ func NewGenerator(req Request) *Generator {
 		WithIface:     req.WithIface,
 		WithContracts: req.WithContracts,
 		EntName:       req.EntName,
+		Model:         req.Model,
+		Plural:        req.Plural,
 		V2:            req.V2,
 	}
 }
@@ -247,8 +260,28 @@ func (g *Generator) generateWire() error {
 }
 
 func (g *Generator) prepare() error {
-	if g.WithCRUD && g.EntName == "" {
-		return errors.New("please specify ent name")
+	g.IsSQLC = g.detectProjectKind().IsSQLC()
+
+	if g.WithCRUD {
+		if g.IsSQLC {
+			if g.Model == "" {
+				g.Model = g.EntName
+			}
+			if g.Model == "" {
+				return errors.New("please specify --model (e.g. --model User) for a sqlc project")
+			}
+			g.Model = strcase.ToCamel(g.Model)
+			if g.Plural == "" {
+				g.Plural = g.Model + "s"
+			}
+			g.Plural = strcase.ToCamel(g.Plural)
+			if g.Table == "" {
+				g.Table = strcase.ToSnake(g.Plural)
+			}
+			g.warnMissingSQLCModel()
+		} else if g.EntName == "" {
+			return errors.New("please specify ent name")
+		}
 	}
 
 	g.FilenameRouteSuffix = "_routes.go"
@@ -291,11 +324,18 @@ func (g *Generator) prepare() error {
 	g.saveBizContractFilePath = filepath.Join(g.RootPath, strcase.ToSnake(g.Name)+"_contract.go")
 
 	g.routeTpl = tpl.RouteTpl
-	g.bizTpl = tpl.BizTpl
-	g.bizIfaceTpl = tpl.BizIfaceTpl
-	g.repoTpl = tpl.RepoTpl
 	g.bizParamsTpl = tpl.BizParamsTpl
 	g.bizContractTpl = tpl.BizContractTpl
+
+	if g.IsSQLC && g.WithCRUD {
+		g.bizTpl = tpl.BizSQLCTpl
+		g.bizIfaceTpl = tpl.BizIfaceSQLCTpl
+		g.repoTpl = tpl.RepoSQLCTpl
+	} else {
+		g.bizTpl = tpl.BizTpl
+		g.bizIfaceTpl = tpl.BizIfaceTpl
+		g.repoTpl = tpl.RepoTpl
+	}
 
 	g.StructRouteName = strcase.ToCamel(g.Name + "Route")
 	g.StructBizName = strcase.ToCamel(g.Name + "Biz")
@@ -310,6 +350,33 @@ func (g *Generator) prepare() error {
 	g.UseRouterRegister = g.hasRouterRegister()
 
 	return nil
+}
+
+// warnMissingSQLCModel prints a hint when the requested sqlc model type has
+// not been generated yet. The scaffold still compiles only after the table and
+// queries exist, so surfacing the next step avoids a confusing build error.
+func (g *Generator) warnMissingSQLCModel() {
+	root, err := utils.FindProjectRoot(8)
+	if err != nil {
+		return
+	}
+	models, err := os.ReadFile(filepath.Join(root, "internal", "data", "sqlc", "models.go"))
+	if err != nil {
+		return
+	}
+	if !strings.Contains(string(models), "type "+g.Model+" struct") {
+		utils.Info(fmt.Sprintf("warning: sqlc.%s is not generated yet; add the %s table to db/migrations and run make sqlc before building", g.Model, g.Table))
+	}
+}
+
+// detectProjectKind classifies the project containing the current directory so
+// the generator can emit Ent or sqlc persistence code.
+func (g *Generator) detectProjectKind() core.ProjectKind {
+	root, err := utils.FindProjectRoot(8)
+	if err != nil {
+		return core.ProjectKindUnknown
+	}
+	return core.DetectProjectKind(root)
 }
 
 // usesKoanfV2 detects the project's configured koanf major version so a

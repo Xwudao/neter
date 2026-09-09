@@ -10,6 +10,7 @@ import (
 
 	"github.com/spf13/cobra"
 
+	"github.com/Xwudao/neter/internal/core"
 	"github.com/Xwudao/neter/internal/route_info"
 	"github.com/Xwudao/neter/pkg/utils"
 )
@@ -113,6 +114,7 @@ func runRouteInfo(cmd *cobra.Command) error {
 	if err != nil {
 		return err
 	}
+	warnIfSQLCProject(cfg.Dir)
 
 	projectRoutes, err := route_info.AnalyzeRoutes(cfg.Dir)
 	if err != nil {
@@ -158,6 +160,7 @@ func runRouteInfoExport(cmd *cobra.Command) error {
 	if err != nil {
 		return err
 	}
+	warnIfSQLCProject(cfg.Dir)
 
 	if cfg.Output == "" {
 		return fmt.Errorf("--output is required for export command")
@@ -192,6 +195,7 @@ func runRouteInfoGenTS(cmd *cobra.Command) error {
 			return fmt.Errorf("get current dir: %w", err)
 		}
 	}
+	warnIfSQLCProject(dir)
 	output, _ := cmd.Flags().GetString("output")
 	if !cmd.Flags().Changed("output") {
 		// Default output follows the configured frontend directory
@@ -354,6 +358,17 @@ func writeRouteInfo(projectRoutes *route_info.ProjectRoutes, cfg *routeInfoConfi
 	default:
 		return fmt.Errorf("unsupported format: %s (use json, md, or curl)", cfg.Format)
 	}
+}
+
+// warnIfSQLCProject prints a hint when route-info is run against a new
+// PostgreSQL + sqlc template. route-info targets the legacy Ent/MySQL template
+// and is not maintained for new projects; the notice keeps the command
+// working without silently producing misleading output.
+func warnIfSQLCProject(dir string) {
+	if !core.DetectProjectKind(dir).IsSQLC() {
+		return
+	}
+	fmt.Println("note: new sqlc project detected; `nr route-info` targets the legacy template and is not maintained for new projects")
 }
 
 // detectServerFromConfig reads the project's config.yml and extracts
