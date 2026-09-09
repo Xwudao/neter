@@ -26,7 +26,7 @@ import (
 )
 
 const (
-	gitUrl  = "git@github.com:Xwudao/nr-template.git"
+	gitUrl  = "git@github.com:Xwudao/neter-template.git"
 	httpUrl = "https://github.com/Xwudao/neter-template.git"
 )
 
