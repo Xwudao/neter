@@ -1,6 +1,7 @@
 package cmd
 
 import (
+	"bytes"
 	"os"
 	"os/exec"
 	"runtime"
@@ -73,6 +74,30 @@ func TestFormatDevOutputLine(t *testing.T) {
 	}
 	if !strings.Contains(line, devColorReset) {
 		t.Fatalf("expected reset code in %q", line)
+	}
+}
+
+func TestStreamProcessOutputKeepsBackendLogContinuationsUnprefixed(t *testing.T) {
+	input := strings.NewReader("2026-09-09 23:52:37\tINFO\t[SQL] first line\nSELECT id\n  FROM request_logs\n2026-09-09 23:52:38\tINFO\tfinished\n")
+	var output bytes.Buffer
+
+	(&devSupervisor{}).streamProcessOutput(input, &output, devBackendProcess, devColorBlue)
+
+	lines := strings.Split(strings.TrimSuffix(output.String(), "\n"), "\n")
+	if got, want := len(lines), 4; got != want {
+		t.Fatalf("output line count = %d, want %d: %q", got, want, output.String())
+	}
+	if !strings.Contains(lines[0], "[backend]") || !strings.Contains(lines[3], "[backend]") {
+		t.Fatalf("expected timestamped log headers to be prefixed: %q", output.String())
+	}
+	if strings.Contains(lines[1], "[backend]") || strings.Contains(lines[2], "[backend]") {
+		t.Fatalf("expected log continuation lines to remain unprefixed: %q", output.String())
+	}
+	if got, want := lines[1], "SELECT id"; got != want {
+		t.Fatalf("first continuation = %q, want %q", got, want)
+	}
+	if got, want := lines[2], "  FROM request_logs"; got != want {
+		t.Fatalf("second continuation = %q, want %q", got, want)
 	}
 }
 
