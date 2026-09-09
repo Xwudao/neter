@@ -53,6 +53,7 @@ var devURLPattern = regexp.MustCompile(`https?://[^\s"'<>]+`)
 var devLocalURLPattern = regexp.MustCompile(`(?:^|\s)Local:\s*(https?://[^\s"'<>]+)`)
 var devANSISequencePattern = regexp.MustCompile(`\x1b\[[0-9;?]*[ -/]*[@-~]`)
 var devBackendLogHeaderPattern = regexp.MustCompile(`^\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}\s`)
+var devSQLDurationPattern = regexp.MustCompile(`^\s*\([\d.]+(?:ns|µs|ms|s)\)\s*$`)
 
 type devProcessSpec struct {
 	Name    string
@@ -487,7 +488,7 @@ func (s *devSupervisor) sendFrontendOpenCommand() error {
 func (s *devSupervisor) streamProcessOutput(src io.Reader, dst io.Writer, name string, color string) {
 	scanner := bufio.NewScanner(src)
 	scanner.Buffer(make([]byte, 0, 64*1024), devScannerBuffer)
-	backendBeforeFirstLogHeader := name == devBackendProcess
+	backendSQLBlock := false
 	for scanner.Scan() {
 		line := scanner.Text()
 		if name == devFrontendProcess {
@@ -496,21 +497,20 @@ func (s *devSupervisor) streamProcessOutput(src io.Reader, dst io.Writer, name s
 			}
 		}
 
-		// The backend's text logger writes a timestamped header followed by the
-		// message, which can span several lines (for example formatted SQL). Tag
-		// just the header so its continuation lines remain a single readable log
-		// entry instead of being broken apart by repeated process prefixes.
-		isBackendLogHeader := devBackendLogHeaderPattern.MatchString(line)
-		prefixLine := name != devBackendProcess || backendBeforeFirstLogHeader || isBackendLogHeader
-		if name == devBackendProcess && isBackendLogHeader {
-			backendBeforeFirstLogHeader = false
-		}
+		isBackendLogHeader := name == devBackendProcess && devBackendLogHeaderPattern.MatchString(line)
+		isSQLLogHeader := isBackendLogHeader && strings.Contains(line, "[SQL]")
+		prefixLine := !backendSQLBlock || isBackendLogHeader
 
 		s.outputMu.Lock()
 		if prefixLine {
 			fmt.Fprintln(dst, formatDevOutputLine(name, color, line))
 		} else {
 			fmt.Fprintln(dst, line)
+		}
+		if isSQLLogHeader {
+			backendSQLBlock = true
+		} else if backendSQLBlock && (isBackendLogHeader || devSQLDurationPattern.MatchString(line)) {
+			backendSQLBlock = false
 		}
 		s.outputMu.Unlock()
 	}

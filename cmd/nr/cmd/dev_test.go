@@ -77,7 +77,7 @@ func TestFormatDevOutputLine(t *testing.T) {
 	}
 }
 
-func TestStreamProcessOutputKeepsBackendLogContinuationsUnprefixed(t *testing.T) {
+func TestStreamProcessOutputPrefixesSQLBlockOnce(t *testing.T) {
 	input := strings.NewReader("2026-09-09 23:52:37\tINFO\t[SQL] first line\nSELECT id\n  FROM request_logs\n2026-09-09 23:52:38\tINFO\tfinished\n")
 	var output bytes.Buffer
 
@@ -88,16 +88,27 @@ func TestStreamProcessOutputKeepsBackendLogContinuationsUnprefixed(t *testing.T)
 		t.Fatalf("output line count = %d, want %d: %q", got, want, output.String())
 	}
 	if !strings.Contains(lines[0], "[backend]") || !strings.Contains(lines[3], "[backend]") {
-		t.Fatalf("expected timestamped log headers to be prefixed: %q", output.String())
+		t.Fatalf("expected SQL header and following log to be prefixed: %q", output.String())
 	}
 	if strings.Contains(lines[1], "[backend]") || strings.Contains(lines[2], "[backend]") {
-		t.Fatalf("expected log continuation lines to remain unprefixed: %q", output.String())
+		t.Fatalf("expected SQL continuation lines to remain unprefixed: %q", output.String())
 	}
 	if got, want := lines[1], "SELECT id"; got != want {
-		t.Fatalf("first continuation = %q, want %q", got, want)
+		t.Fatalf("first SQL continuation = %q, want %q", got, want)
 	}
 	if got, want := lines[2], "  FROM request_logs"; got != want {
-		t.Fatalf("second continuation = %q, want %q", got, want)
+		t.Fatalf("second SQL continuation = %q, want %q", got, want)
+	}
+}
+
+func TestStreamProcessOutputPrefixesGINLogs(t *testing.T) {
+	input := strings.NewReader("[GIN] 2026/09/10 - 00:08:28 | 200 | GET /health\n")
+	var output bytes.Buffer
+
+	(&devSupervisor{}).streamProcessOutput(input, &output, devBackendProcess, devColorBlue)
+
+	if !strings.Contains(output.String(), "[backend]") {
+		t.Fatalf("expected GIN log to be prefixed: %q", output.String())
 	}
 }
 
