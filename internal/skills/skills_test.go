@@ -20,7 +20,9 @@ func TestRenderSQLC(t *testing.T) {
 		"Detected persistence stack: **sqlc**",
 		"--model Order --plural Orders",
 		"nr migrate new add_orders",
-		"sqlc.<Model>",
+		"SQL is the source of truth.",
+		"data.Queries",
+		"nr migrate up --steps 1",
 	} {
 		if !strings.Contains(out, want) {
 			t.Errorf("sqlc skill missing %q", want)
@@ -46,7 +48,7 @@ func TestRenderEnt(t *testing.T) {
 			t.Errorf("ent skill missing %q", want)
 		}
 	}
-	if strings.Contains(out, "sqlc.<Model>") {
+	if strings.Contains(out, "SQL is the source of truth.") {
 		t.Error("ent skill must not contain the sqlc section")
 	}
 }
@@ -56,8 +58,15 @@ func TestRenderUnknown(t *testing.T) {
 	if err != nil {
 		t.Fatalf("render: %v", err)
 	}
-	if !strings.Contains(out, "could not be detected") {
-		t.Error("unknown skill should explain that the stack was not detected")
+	for _, want := range []string{
+		"could not be detected",
+		"Do not guess a CRUD model flag.",
+		"--model Order --plural Orders",
+		"--ent-name Order",
+	} {
+		if !strings.Contains(out, want) {
+			t.Errorf("unknown skill missing %q", want)
+		}
 	}
 }
 
@@ -90,8 +99,8 @@ func TestWriteAndOverwrite(t *testing.T) {
 		t.Fatalf("rewrite: %v", err)
 	}
 	content, _ = os.ReadFile(path)
-	if strings.Contains(string(content), "sqlc.<Model>") {
-		t.Error("rewrite should replace the sqlc content with the ent content")
+	if strings.Contains(string(content), "SQL is the source of truth.") {
+		t.Error("rewrite should replace the sqlc content with the Ent content")
 	}
 }
 
