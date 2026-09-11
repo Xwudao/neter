@@ -56,7 +56,16 @@ export type GetV1CategoryListResponse = ApiResponse<Array<GetV1CategoryListRespo
 - 请求：`{Method}{Path}{Body|Query|Path}`
   - `JSON/JSONE` 包装 → `Body`；`RequestE` 带 form 标签或 GET/DELETE → `Query`；
     URI 参数 → `Path`
-  - 请求字段可选 = 后端未标 `binding:"required"`（省略时绑定零值，不会报错）
+  - 请求字段可选 = 后端未声明必填（省略时绑定零值，不会报错）。分析器按顺序识别两种必填声明：
+    1. Gin 结构体标签 `binding:"required"`（旧模板 / legacy Ent 项目）
+    2. 代码式校验 `Validate() error` 中无条件拒绝零值的规则：`validate.Required()`、
+       `validate.NotZero[T]()`、正整数边界的 `Min`/`MinLen`/`MinItems`，以及不含空字符串
+       成员的 `OneOf(...)`（`github.com/Xwudao/go-validate`，sqlc+pg 项目惯例）
+
+    被 `validate.Optional(...)` / `validate.When(...)` 包裹的规则不会让字段变必填；
+    只做 `Max`/`MaxLen`/`MaxItems`、`Min(0)`、或 `OneOf("", ...)` 的字段仍为可选。未提供
+    任何校验的 DTO（例如尚无 `Validate()` 的 `admin_token_params.go`）没有必填信号，生成
+    的字段会保持可选——此时应在项目侧补上 `Validate()`，而不是依赖生成器猜测。
 - 响应：`{Method}{Path}Response = ApiResponse<T>`；`core.ListResponse[T]` →
   `{ list: Array<T>; total: number }`；`EmptyResponse` → `null`
 - 响应字段可选 = `omitempty` 或指针；但 `ent.X` 的代码生成字段默认带

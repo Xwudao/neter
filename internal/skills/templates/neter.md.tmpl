@@ -193,6 +193,16 @@ Use `--output file.ts` with `gen-ts` only when a single generated TypeScript
 file is required; otherwise use a directory for per-route files. Do not edit
 `*.gen.ts` by hand—change routes/types and regenerate instead.
 
+Request fields become required in the contract when the backend declares them
+so: either a Gin `binding:"required"` tag or an unconditional rule in the
+DTO's code-first `Validate() error` that rejects the zero value
+(`validate.Required`, `validate.NotZero`, positive `Min`/`MinLen`/`MinItems`,
+`OneOf` without an empty-string member) — the `github.com/Xwudao/go-validate`
+convention in sqlc+pg projects. `validate.Optional`/`validate.When` keep the
+field optional. A DTO without any `Validate()` method has no required signal
+and its fields stay optional, so add `Validate()` when a field must be
+mandatory rather than editing the generated file.
+
 ## Tests, mocks, and generated output
 
 - Run `make test` for the project's normal test target (or `go test ./...` if

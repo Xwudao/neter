@@ -1252,9 +1252,13 @@ func (ra *routeAnalyzer) findTypeInFile(fp string, f *ast.File, typeName string,
 			}
 			st, ok := ts.Type.(*ast.StructType)
 			if ok {
-				return ra.extractFieldsFromStruct(st, func(nested string) []FieldInfo {
+				fields := ra.extractFieldsFromStruct(st, func(nested string) []FieldInfo {
 					return ra.resolveEmbeddedType(fp, nested)
-				}, fromEnt), nil
+				}, fromEnt)
+				if !fromEnt {
+					ra.markValidateRequired(fp, f, typeName, fields)
+				}
+				return fields, nil
 			}
 			if enum := ra.collectEnumValues(pkgFiles, typeName, ts.Type); enum != nil {
 				return nil, enum
@@ -1583,6 +1587,182 @@ func isEntPackage(fullPkgPath string) bool {
 		}
 	}
 	return false
+}
+
+// markValidateRequired marks request fields as required when the struct's
+// code-first Validate() method rejects their zero value unconditionally, i.e.
+// via validate.Required() or validate.NotZero[T]().
+//
+// Projects that migrated from Gin `binding:"required"` tags to the
+// `github.com/Xwudao/go-validate` package carry no struct-tag signal, so
+// without this pass every request field would be rendered as optional in the
+// generated TypeScript.
+func (ra *routeAnalyzer) markValidateRequired(fp string, f *ast.File, typeName string, fields []FieldInfo) {
+	if len(fields) == 0 {
+		return
+	}
+	body := findValidateMethodBody(f, typeName)
+	if body == nil {
+		for _, pf := range ra.packageFiles(fp) {
+			if pf.path == fp {
+				continue
+			}
+			if b := findValidateMethodBody(pf.file, typeName); b != nil {
+				body = b
+				break
+			}
+		}
+	}
+	if body == nil {
+		return
+	}
+	required := requiredValidateFields(body)
+	for i := range fields {
+		if required[fields[i].Name] {
+			fields[i].Required = true
+		}
+	}
+}
+
+// findValidateMethodBody locates `func (x X) Validate() error` (value or
+// pointer receiver) for typeName in a parsed file.
+func findValidateMethodBody(f *ast.File, typeName string) *ast.BlockStmt {
+	for _, decl := range f.Decls {
+		fd, ok := decl.(*ast.FuncDecl)
+		if !ok || fd.Name.Name != "Validate" || fd.Body == nil || fd.Recv == nil || len(fd.Recv.List) == 0 {
+			continue
+		}
+		if strings.TrimLeft(exprString(fd.Recv.List[0].Type), "*") == typeName {
+			return fd.Body
+		}
+	}
+	return nil
+}
+
+// requiredValidateFields collects the Go field names validated unconditionally
+// as required (validate.Required / validate.NotZero) inside a Validate() body.
+func requiredValidateFields(body *ast.BlockStmt) map[string]bool {
+	required := map[string]bool{}
+	ast.Inspect(body, func(n ast.Node) bool {
+		call, ok := n.(*ast.CallExpr)
+		if !ok || callFuncName(call.Fun) != "Field" || len(call.Args) < 2 {
+			return true
+		}
+		name := validatedGoField(call.Args[1])
+		if name == "" {
+			return true
+		}
+		for _, rule := range call.Args[2:] {
+			if ruleRequiresValue(rule) {
+				required[name] = true
+				break
+			}
+		}
+		return true
+	})
+	return required
+}
+
+// ruleRequiresValue reports whether a go-validate rule expression rejects the
+// zero value unconditionally. Message wraps another rule; When/Optional make
+// the rule conditional (or skip nil pointers) and therefore never force a
+// field to be present. OneOf without an explicit empty-string member and
+// Min/MinLen/MinItems with a positive bound all reject the zero value, so the
+// field must be supplied in the request.
+func ruleRequiresValue(expr ast.Expr) bool {
+	call, ok := expr.(*ast.CallExpr)
+	if !ok {
+		return false
+	}
+	switch callFuncName(call.Fun) {
+	case "Required", "NotZero":
+		return true
+	case "Optional", "When":
+		return false
+	case "Message":
+		for _, arg := range call.Args {
+			if ruleRequiresValue(arg) {
+				return true
+			}
+		}
+		return false
+	case "Min", "MinLen", "MinItems":
+		return hasPositiveBound(call.Args)
+	case "OneOf":
+		for _, arg := range call.Args {
+			if s, ok := stringLiteral(arg); ok && s == "" {
+				return false
+			}
+		}
+		return true
+	}
+	return false
+}
+
+// hasPositiveBound reports whether the first argument is an integer literal
+// >= 1 (validate.Min/MinLen/MinItems bounds).
+func hasPositiveBound(args []ast.Expr) bool {
+	if len(args) == 0 {
+		return false
+	}
+	lit, ok := args[0].(*ast.BasicLit)
+	if !ok || lit.Kind != token.INT {
+		return false
+	}
+	n, err := strconv.Atoi(lit.Value)
+	return err == nil && n >= 1
+}
+
+// stringLiteral unquotes a string literal argument, reporting false for
+// non-literals (named constants, variables, etc.).
+func stringLiteral(expr ast.Expr) (string, bool) {
+	lit, ok := expr.(*ast.BasicLit)
+	if !ok || lit.Kind != token.STRING {
+		return "", false
+	}
+	s, err := strconv.Unquote(lit.Value)
+	if err != nil {
+		return "", false
+	}
+	return s, true
+}
+
+// callFuncName returns the bare function name of a call target, unwrapping
+// generic instantiations such as validate.NotZero[int64]().
+func callFuncName(fun ast.Expr) string {
+	switch e := fun.(type) {
+	case *ast.Ident:
+		return e.Name
+	case *ast.SelectorExpr:
+		return e.Sel.Name
+	case *ast.IndexExpr:
+		return callFuncName(e.X)
+	case *ast.IndexListExpr:
+		return callFuncName(e.X)
+	}
+	return ""
+}
+
+// validatedGoField extracts the struct field name from the value expression
+// passed to validate.Field, e.g. c.Name → Name, string(u.Status) → Status.
+func validatedGoField(expr ast.Expr) string {
+	switch e := expr.(type) {
+	case *ast.SelectorExpr:
+		return e.Sel.Name
+	case *ast.Ident:
+		return e.Name
+	case *ast.StarExpr:
+		return validatedGoField(e.X)
+	case *ast.ParenExpr:
+		return validatedGoField(e.X)
+	case *ast.CallExpr:
+		if len(e.Args) == 1 {
+			if _, ok := e.Fun.(*ast.Ident); ok {
+				return validatedGoField(e.Args[0])
+			}
+		}
+	}
+	return ""
 }
 
 // bindingTagRequired reports whether the Gin binding rule list contains the

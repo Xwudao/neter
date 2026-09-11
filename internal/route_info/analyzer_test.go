@@ -452,3 +452,90 @@ const (
 		}
 	}
 }
+
+func TestAnalyzeRoutesMarksRequiredFromCodeFirstValidate(t *testing.T) {
+	root := t.TempDir()
+	writeRouteInfoFixture(t, root, "go.mod", "module example.test/app\n\ngo 1.24\n")
+	writeRouteInfoFixture(t, root, "api/order_route.go", `package api
+
+import (
+    "example.test/app/params"
+    "example.test/core"
+    "github.com/gin-gonic/gin"
+)
+
+type OrderRoute struct{ g *gin.Engine }
+
+func (r *OrderRoute) Reg() {
+    r.g.POST("/orders", core.JSONE(r.create))
+}
+
+func (r *OrderRoute) create(c *gin.Context, p *params.CreateOrderParams) (string, error) {
+    return "ok", nil
+}
+`)
+	// go-validate is code-first (no struct tags), so the analyzer has to read
+	// validate.Required/NotZero out of the Validate() method body.
+	writeRouteInfoFixture(t, root, "params/order_params.go", `package params
+
+import validate "github.com/Xwudao/go-validate"
+
+type CreateOrderParams struct {
+    ID        int64    `+"`json:\"id\"`"+`
+    Name      string   `+"`json:\"name\"`"+`
+    Note      string   `+"`json:\"note\"`"+`
+    Status    string   `+"`json:\"status\"`"+`
+    Limit     *int     `+"`json:\"limit\"`"+`
+    Amount    int      `+"`json:\"amount\"`"+`
+    Code      string   `+"`json:\"code\"`"+`
+    Tags      []string `+"`json:\"tags\"`"+`
+    Floor     int      `+"`json:\"floor\"`"+`
+    Maybe     string   `+"`json:\"maybe\"`"+`
+}
+
+func (p CreateOrderParams) Validate() error {
+    return validate.Validate(
+        validate.Field("id", p.ID, validate.Message("id required", validate.NotZero[int64]())),
+        validate.Field("name", p.Name, validate.Message("name required", validate.Required())),
+        validate.Field("note", p.Note, validate.Message("note too long", validate.MaxLen(200))),
+        validate.Field("status", string(p.Status), validate.Required(), validate.OneOf("paid", "pending")),
+        validate.Field("limit", p.Limit, validate.Optional(validate.Min(1))),
+        validate.Field("amount", p.Amount, validate.When(p.Amount != 0, validate.Min(1))),
+        validate.Field("code", p.Code, validate.Message("bad code", validate.OneOf("a", "b"))),
+        validate.Field("tags", p.Tags, validate.Message("pick one", validate.MinItems[string](1))),
+        validate.Field("floor", p.Floor, validate.Message("no negative", validate.Min(0))),
+        validate.Field("maybe", p.Maybe, validate.Message("bad maybe", validate.OneOf("", "x"))),
+    )
+}
+`)
+
+	routes, err := AnalyzeRoutes(root)
+	if err != nil {
+		t.Fatalf("AnalyzeRoutes() error = %v", err)
+	}
+	if len(routes.Routes) != 1 || len(routes.Routes[0].Params) != 1 {
+		t.Fatalf("routes = %#v, want one route with one params struct", routes.Routes)
+	}
+
+	required := map[string]bool{}
+	for _, field := range routes.Routes[0].Params[0].Fields {
+		required[field.Name] = field.Required
+	}
+	for _, name := range []string{"ID", "Name", "Status", "Code", "Tags"} {
+		if !required[name] {
+			t.Errorf("field %s: Required = false, want true", name)
+		}
+	}
+	for _, name := range []string{"Note", "Limit", "Amount", "Floor", "Maybe"} {
+		if required[name] {
+			t.Errorf("field %s: Required = true, want false", name)
+		}
+	}
+
+	contract := GenerateTypeScriptFiles(routes)["order_route.gen.ts"]
+	for _, want := range []string{"id: number", "name: string", `status: string`, "code: string", "tags: Array<string>", "note?: string", "limit?: number | null", "amount?: number", "floor?: number"} {
+		if !strings.Contains(contract, want) {
+			t.Fatalf("contract missing %q:\n%s", want, contract)
+		}
+	}
+}

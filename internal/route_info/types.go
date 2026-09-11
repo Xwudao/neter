@@ -30,7 +30,7 @@ type FieldInfo struct {
 	Name     string      `json:"name"`               // field name
 	Type     string      `json:"type"`               // field type as string
 	Tag      string      `json:"tag,omitempty"`      // struct tag (json/form/binding)
-	Required bool        `json:"required,omitempty"` // whether binding:"required" is set
+	Required bool        `json:"required,omitempty"` // whether binding:"required" or an unconditional validate.Required/NotZero is set
 	Fields   []FieldInfo `json:"fields,omitempty"`   // nested struct fields
 	// Enum is set when Type resolves to a named enum (type X string/int)
 	// with const values; TS generation then emits a literal union instead of
