@@ -117,17 +117,17 @@ type change struct {
 }
 
 type plan struct {
-	root    string
-	changes []change
+	root string
+	// paths is the order changes are applied in; changes maps each planned
+	// path to its new content, or nil when the file is removed.
+	paths   []string
+	changes map[string][]byte
 	graphs  map[string][]string
 	notes   []string
 }
 
 func (p *plan) touched() []string {
-	paths := make([]string, 0, len(p.changes)+2)
-	for _, c := range p.changes {
-		paths = append(paths, c.path)
-	}
+	paths := append([]string(nil), p.paths...)
 	// go mod tidy rewrites these, so they have to be restorable too.
 	paths = append(paths, filepath.Join(p.root, "go.mod"), filepath.Join(p.root, "go.sum"))
 	return paths
@@ -135,13 +135,14 @@ func (p *plan) touched() []string {
 
 func (p *plan) result() *Result {
 	res := &Result{Graphs: p.graphs, Notes: p.notes}
-	for _, c := range p.changes {
-		rel := relPath(p.root, c.path)
+	for _, path := range p.paths {
+		rel := relPath(p.root, path)
+		content := p.changes[path]
 		switch {
-		case c.content == nil:
+		case content == nil:
 			res.Removed = append(res.Removed, rel)
 		default:
-			if _, err := os.Stat(c.path); errors.Is(err, fs.ErrNotExist) {
+			if _, err := os.Stat(path); errors.Is(err, fs.ErrNotExist) {
 				res.Created = append(res.Created, rel)
 				continue
 			}
@@ -154,19 +155,60 @@ func (p *plan) result() *Result {
 	return res
 }
 
+// set plans a write. Planning the same path twice is a bug in the converter —
+// it means one rewrite would silently discard another, which is exactly how a
+// provider set declared in a wireinject file used to disappear — so it fails
+// loudly instead.
+func (p *plan) set(path string, content []byte) error {
+	if _, planned := p.changes[path]; planned {
+		return fmt.Errorf("internal error: %s was planned twice", relPath(p.root, path))
+	}
+	p.paths = append(p.paths, path)
+	p.changes[path] = content
+	return nil
+}
+
+// read returns the content a later rewrite should build on: what is already
+// planned for the path, or what is on disk.
+func (p *plan) read(path string) ([]byte, error) {
+	if content, planned := p.changes[path]; planned {
+		return content, nil
+	}
+	return os.ReadFile(path)
+}
+
+// update plans a rewrite that composes with whatever is already planned for the
+// path, such as a call site inside a file that also held a provider set.
+func (p *plan) update(path string, content []byte) {
+	if _, planned := p.changes[path]; !planned {
+		p.paths = append(p.paths, path)
+	}
+	p.changes[path] = content
+}
+
+func (p *plan) remove(path string) error {
+	if _, planned := p.changes[path]; planned {
+		return fmt.Errorf("internal error: %s was planned twice", relPath(p.root, path))
+	}
+	p.paths = append(p.paths, path)
+	p.changes[path] = nil
+	return nil
+}
+
 func (p *plan) apply() error {
-	for _, c := range p.changes {
-		if c.content == nil {
-			if err := os.Remove(c.path); err != nil && !errors.Is(err, fs.ErrNotExist) {
-				return fmt.Errorf("remove %s: %w", c.path, err)
+	for _, path := range p.paths {
+		content := p.changes[path]
+		if content == nil {
+			if err := os.Remove(path); err != nil && !errors.Is(err, fs.ErrNotExist) {
+				return fmt.Errorf("remove %s: %w", path, err)
 			}
 			continue
 		}
-		if err := os.MkdirAll(filepath.Dir(c.path), 0o755); err != nil {
+		if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
 			return err
 		}
-		if err := os.WriteFile(c.path, c.content, 0o644); err != nil {
-			return fmt.Errorf("write %s: %w", c.path, err)
+		if err := os.WriteFile(path, content, 0o644); err != nil {
+			return fmt.Errorf("write %s: %w", path, err)
 		}
 	}
 	return nil

@@ -133,16 +133,22 @@ func TestConvertRewritesProviderSet(t *testing.T) {
 	assert.Contains(t, got, "// Interfaces are bound to their implementation below.")
 }
 
-func TestConvertMovesGraphBindIntoModule(t *testing.T) {
+func TestConvertKeepsGraphBindInGraph(t *testing.T) {
 	root := fixture(t)
 	_, err := Convert(Options{Root: root, Apply: true, SkipVerify: true})
 	require.NoError(t, err)
 
-	// The graph-bound interface belongs next to the constructor that implements
-	// it, and must lose the graph's package qualifier on the way.
-	got := read(t, root, "pkg/logger/provider.go")
-	assert.Contains(t, got, "loom.As[RedisLogger](NewLogBroadcaster)")
-	assert.NotContains(t, got, "logger.RedisLogger")
+	// The binding stays in the graph: moving it into pkg/logger would make that
+	// package import whatever declares the interface, which is normally a
+	// package that already imports pkg/logger.
+	module := read(t, root, "pkg/logger/provider.go")
+	assert.Contains(t, module, "loom.Provide(NewLogBroadcaster)")
+	assert.NotContains(t, module, "loom.As", "the module must not gain the binding")
+	assert.NotContains(t, module, "RedisLogger")
+
+	got := read(t, root, "cmd/app/graph.go")
+	assert.Contains(t, got, "loom.As[logger.RedisLogger](logger.NewLogBroadcaster)")
+	assert.Contains(t, got, "\t\tlogger.ProviderLoggerSet,")
 }
 
 func TestConvertReplacesInjectorWithGraph(t *testing.T) {
@@ -199,6 +205,94 @@ func Send() {
 	got := read(t, root, "internal/cmd/send.go")
 	// build() is not an injector, so the file is left alone.
 	assert.Contains(t, got, "var app, f, err = build()")
+}
+
+// Projects name the cleanup result anything, so the converter must not look for
+// a specific identifier.
+func TestConvertHandlesAnyCleanupName(t *testing.T) {
+	root := fixture(t)
+	require.NoError(t, os.WriteFile(filepath.Join(root, "cmd", "app", "main.go"),
+		[]byte(`package main
+
+func main() {
+	app, cl, err := mainApp()
+	if err != nil {
+		panic(err)
+	}
+	defer cl()
+	_ = app
+}
+
+func other() {
+	// A different injector whose cleanup is discarded.
+	_, _, err := mainApp()
+	if err != nil {
+		panic(err)
+	}
+}
+`), 0o644))
+
+	_, err := Convert(Options{Root: root, Apply: true, SkipVerify: true})
+	require.NoError(t, err)
+
+	got := read(t, root, "cmd/app/main.go")
+	assert.Contains(t, got, "app, lifecycle, err := mainApp()")
+	assert.Contains(t, got, "lifecycle.Stop(context.Background())")
+	assert.NotContains(t, got, "defer cl()")
+	// A discarded cleanup must keep compiling as a discard.
+	assert.Contains(t, got, "_, _, err := mainApp()")
+	assert.NotContains(t, got, "_, lifecycle, err")
+}
+
+// A Wire injector file may declare its own provider set and reference it from
+// the injectors beside it. That set has to be converted and carried into the
+// graph file, not deleted along with the stub.
+func TestConvertKeepsSetDeclaredInInjectorFile(t *testing.T) {
+	root := t.TempDir()
+	files := map[string]string{
+		"go.mod": "module example.com/app\n\ngo 1.25.0\n",
+		"cmd/app/wire.go": `//go:build wireinject
+
+package main
+
+import (
+	"github.com/google/wire"
+
+	"example.com/app/pkg/config"
+	"example.com/app/pkg/logger"
+)
+
+func InitCmd() (*InitApp, func(), error) {
+	panic(wire.Build(NewInitApp))
+}
+
+var commonSet = wire.NewSet(
+	config.NewKoanf,
+	logger.NewLogger,
+)
+
+func MigrateCmd() (*MigrateApp, func(), error) {
+	panic(wire.Build(NewMigrateApp, commonSet))
+}
+`,
+	}
+	for name, content := range files {
+		path := filepath.Join(root, filepath.FromSlash(name))
+		require.NoError(t, os.MkdirAll(filepath.Dir(path), 0o755))
+		require.NoError(t, os.WriteFile(path, []byte(content), 0o644))
+	}
+
+	_, err := Convert(Options{Root: root, Apply: true, SkipVerify: true})
+	require.NoError(t, err)
+
+	got := read(t, root, "cmd/app/graph.go")
+	assert.Contains(t, got, "var commonSet = loom.Module(")
+	assert.Contains(t, got, "loom.Provide(config.NewKoanf)")
+	assert.Contains(t, got, "loom.Provide(logger.NewLogger)")
+	assert.Contains(t, got, "\t\tcommonSet,")
+	assert.NotContains(t, got, "wire.NewSet")
+	assert.NotContains(t, got, "wire.Build")
+	assert.NotContains(t, got, "google/wire")
 }
 
 func TestConvertIsTransactional(t *testing.T) {

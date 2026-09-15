@@ -1,6 +1,7 @@
 package wire2loom
 
 import (
+	"bytes"
 	"errors"
 	"fmt"
 	"go/ast"
@@ -64,6 +65,9 @@ type bindRef struct {
 	iface string
 	// impl is the implementation type name, such as "LogBroadcaster".
 	impl string
+	// raw is the implementation reference as written, such as
+	// "*biz.PayBiz", whose qualifier the graph file already imports.
+	raw string
 }
 
 func buildPlan(root string) (*plan, error) {
@@ -107,11 +111,24 @@ func buildPlan(root string) (*plan, error) {
 		}
 	}
 
-	p := &plan{root: root, graphs: map[string][]string{}}
-	if err := p.addProviderRewrites(sets); err != nil {
+	setsByFile := map[string][]*setModel{}
+	for _, set := range sets {
+		setsByFile[set.src.path] = append(setsByFile[set.src.path], set)
+	}
+	injectorsByFile := map[string][]*injectorModel{}
+	for _, injector := range injectors {
+		injectorsByFile[injector.src.path] = append(injectorsByFile[injector.src.path], injector)
+	}
+	hasInjectors := make(map[string]bool, len(injectorsByFile))
+	for path := range injectorsByFile {
+		hasInjectors[path] = true
+	}
+
+	p := &plan{root: root, changes: map[string][]byte{}, graphs: map[string][]string{}}
+	if err := p.addProviderRewrites(setsByFile, hasInjectors); err != nil {
 		return nil, err
 	}
-	if err := p.addGraphRewrites(injectors, registry); err != nil {
+	if err := p.addGraphRewrites(injectorsByFile, setsByFile, registry); err != nil {
 		return nil, err
 	}
 	if err := p.addCallSiteRewrites(injectors); err != nil {
@@ -135,10 +152,7 @@ var leftoverPattern = regexp.MustCompile(`(?i)\bwire\b`)
 // noteLeftovers lists files that still mention Wire, so a stale comment or a
 // hand-written helper is never silently left behind.
 func (p *plan) noteLeftovers() error {
-	planned := make(map[string][]byte, len(p.changes))
-	for _, c := range p.changes {
-		planned[c.path] = c.content
-	}
+	planned := p.changes
 	var found []string
 	err := filepath.WalkDir(p.root, func(path string, entry os.DirEntry, err error) error {
 		if err != nil {
@@ -328,7 +342,7 @@ func asWireBind(src *source, arg ast.Expr) (bindRef, bool) {
 	if impl == "" {
 		return bindRef{}, false
 	}
-	return bindRef{iface: iface, impl: impl}, true
+	return bindRef{iface: iface, impl: impl, raw: concrete}, true
 }
 
 // newArgument unwraps new(T) into the text of T.
@@ -375,18 +389,16 @@ func indexOfConstructor(entries []entry, typeName string) int {
 	return -1
 }
 
-// resolveGraphBinds applies a graph-level wire.Bind to the provider set that
-// declares the bound constructor, or to the constructor listed directly.
+// resolveGraphBinds turns a graph-level wire.Bind into a loom.As option.
 //
-// Wire lets a graph bind an interface that a module provides, which has no
-// direct Loom equivalent: loom.As belongs next to the constructor it binds. The
-// converter therefore moves the binding into the module that owns it, which is
-// also where a reader expects to find it.
+// The binding stays in the graph rather than moving next to the constructor,
+// because the interface package frequently imports the constructor's package:
+// moving it would make that package import the interface back, which Go rejects
+// as a cycle. Loom allows a graph to expose a module's constructor this way, so
+// the Wire shape converts one to one.
 func resolveGraphBinds(injector *injectorModel, registry map[string]*setModel) error {
 	for _, bind := range injector.binds {
-		if applyBindToSet(injector, bind, registry) {
-			continue
-		}
+		// A constructor listed directly in the graph is folded into its entry.
 		matched := false
 		for i, opt := range injector.options {
 			if !matchesConstructor(opt.text, bind.impl) {
@@ -396,84 +408,109 @@ func resolveGraphBinds(injector *injectorModel, registry map[string]*setModel) e
 			matched = true
 			break
 		}
-		if !matched {
-			return fmt.Errorf("%s: %s binds %s, but no provider in that graph constructs it",
-				injector.src.path, injector.name, bind.impl)
+		if matched {
+			continue
 		}
+		ref, err := boundConstructorRef(bind, injector, registry)
+		if err != nil {
+			return err
+		}
+		injector.options = append(injector.options, option{text: ref, as: bind.iface})
 	}
 	return nil
 }
 
-// unqualify drops a package qualifier that names the package the reference is
-// moving into, turning logger.RedisLogger into RedisLogger inside package logger.
-func unqualify(ref, pkgName string) string {
-	index := strings.LastIndexByte(ref, '.')
-	if index < 0 {
-		return ref
+// boundConstructorRef writes the reference to a bound implementation as it must
+// appear in the graph file.
+//
+// The qualifier comes from the wire.Bind argument, which already names the
+// implementation's package the way the graph imports it. The constructor name
+// comes from the provider set that declares it when the converter knows one, so
+// an unconventional name still resolves; otherwise it falls back to the New<Type>
+// convention and lets the verification build reject a wrong guess.
+func boundConstructorRef(bind bindRef, injector *injectorModel, registry map[string]*setModel) (string, error) {
+	qualifier, typeName := splitQualified(bind.raw)
+	if name := declaringConstructor(registry, injector, bind.impl); name != "" {
+		return qualify(qualifier, bareName(name)), nil
 	}
-	if ref[:index] != pkgName {
-		return ref
+	if qualifier == "" {
+		return "", fmt.Errorf(
+			"%s: %s binds %s, but the converter cannot tell which constructor builds it; "+
+				"add loom.As[%s](<constructor>) by hand",
+			injector.src.path, injector.name, bind.impl, bind.iface)
 	}
-	return ref[index+1:]
+	return qualifier + ".New" + typeName, nil
 }
 
-func applyBindToSet(injector *injectorModel, bind bindRef, registry map[string]*setModel) bool {
+// declaringConstructor finds the constructor a provider set in this graph
+// declares for the bound type.
+func declaringConstructor(registry map[string]*setModel, injector *injectorModel, impl string) string {
 	for _, opt := range injector.options {
 		set, ok := registry[bareName(opt.text)]
 		if !ok {
 			continue
 		}
-		index := indexOfConstructor(set.entries, bind.impl)
-		if index < 0 {
-			continue
+		if index := indexOfConstructor(set.entries, impl); index >= 0 {
+			return set.entries[index].text
 		}
-		// The binding came from a graph file, so the interface may carry the
-		// qualifier the graph used. Inside the package that declares it, the
-		// name must be unqualified.
-		set.entries[index].as = unqualify(bind.iface, set.src.pkgName)
-		return true
 	}
-	return false
+	return ""
+}
+
+// splitQualified splits "*biz.PayBiz" into its package qualifier ("biz") and
+// type name ("PayBiz"). The pointer belongs to the bound type, not to the
+// constructor reference being built.
+func splitQualified(ref string) (string, string) {
+	name := strings.TrimPrefix(strings.TrimSpace(ref), "*")
+	index := strings.LastIndexByte(name, '.')
+	if index < 0 {
+		return "", name
+	}
+	return name[:index], name[index+1:]
+}
+
+func qualify(qualifier, name string) string {
+	if qualifier == "" {
+		return name
+	}
+	return qualifier + "." + name
 }
 
 // ---------------------------------------------------------------------------
 // Rendering
 // ---------------------------------------------------------------------------
 
-func (p *plan) addProviderRewrites(sets []*setModel) error {
-	byFile := map[string][]*setModel{}
-	for _, set := range sets {
-		byFile[set.src.path] = append(byFile[set.src.path], set)
-	}
-	paths := make([]string, 0, len(byFile))
-	for path := range byFile {
+// addProviderRewrites converts the sets in files that hold nothing else.
+//
+// A file that also declares injectors is handled by addGraphRewrites, which has
+// to produce the graph file from the same edit pass; writing it here as well
+// would plan two changes for one path and lose one of them.
+func (p *plan) addProviderRewrites(setsByFile map[string][]*setModel, hasInjectors map[string]bool) error {
+	paths := make([]string, 0, len(setsByFile))
+	for path := range setsByFile {
+		if hasInjectors[path] {
+			continue
+		}
 		paths = append(paths, path)
 	}
 	sort.Strings(paths)
 	for _, path := range paths {
-		src := byFile[path][0].src
-		content, err := renderProviderFile(src, byFile[path])
+		sets := setsByFile[path]
+		content, err := renderProviderFile(sets[0].src, sets)
 		if err != nil {
 			return err
 		}
-		p.changes = append(p.changes, change{path: path, content: content})
+		if err := p.set(path, content); err != nil {
+			return err
+		}
 	}
 	return nil
 }
 
-// edit is one textual splice into a file.
-type edit struct {
-	start, end int
-	text       string
-}
-
-// renderProviderFile rewrites every set in a file in place, wrapping each
-// constructor and dropping the bind entries.
-//
-// Editing arguments individually rather than replacing the whole call keeps the
-// order of the entries and any comments written between them, which is exactly
-// the part of a provider set a reader cares about.
-func renderProviderFile(src *source, sets []*setModel) ([]byte, error) {
+// providerEdits rewrites every set declared in src: the callee becomes
+// loom.Module and each constructor is wrapped in loom.Provide, or loom.As when
+// the set binds it to an interface.
+func providerEdits(src *source, sets []*setModel) []edit {
 	var edits []edit
 	for _, set := range sets {
 		edits = append(edits, edit{start: set.funStart, end: set.funEnd, text: "loom.Module"})
@@ -492,7 +529,23 @@ func renderProviderFile(src *source, sets []*setModel) ([]byte, error) {
 			edits = append(edits, edit{start: start, end: end})
 		}
 	}
-	return processImports(src.path, applyEdits(src.src, edits))
+	return edits
+}
+
+// edit is one textual splice into a file.
+type edit struct {
+	start, end int
+	text       string
+}
+
+// renderProviderFile rewrites every set in a file in place, wrapping each
+// constructor and dropping the bind entries.
+//
+// Editing arguments individually rather than replacing the whole call keeps the
+// order of the entries and any comments written between them, which is exactly
+// the part of a provider set a reader cares about.
+func renderProviderFile(src *source, sets []*setModel) ([]byte, error) {
+	return processImports(src.path, applyEdits(src.src, providerEdits(src, sets)))
 }
 
 // dropRange widens a removed argument to swallow one comma, so the argument
@@ -539,35 +592,33 @@ func applyEdits(src []byte, edits []edit) []byte {
 	return out
 }
 
-func (p *plan) addGraphRewrites(injectors []*injectorModel, registry map[string]*setModel) error {
-	byFile := map[string][]*injectorModel{}
-	for _, injector := range injectors {
-		byFile[injector.src.path] = append(byFile[injector.src.path], injector)
-	}
-	paths := make([]string, 0, len(byFile))
-	for path := range byFile {
+func (p *plan) addGraphRewrites(injectorsByFile map[string][]*injectorModel, setsByFile map[string][]*setModel, registry map[string]*setModel) error {
+	paths := make([]string, 0, len(injectorsByFile))
+	for path := range injectorsByFile {
 		paths = append(paths, path)
 	}
 	sort.Strings(paths)
 	for _, path := range paths {
-		fileInjectors := byFile[path]
+		fileInjectors := injectorsByFile[path]
 		src := fileInjectors[0].src
 		graphPath := filepath.Join(filepath.Dir(path), "graph.go")
 		if _, err := os.Stat(graphPath); err == nil {
 			return fmt.Errorf("%s already exists; convert that package by hand", graphPath)
 		}
-		content, err := renderGraphFile(src, fileInjectors, registry)
+		content, err := renderGraphFile(src, fileInjectors, setsByFile[path], registry)
 		if err != nil {
 			return err
 		}
-		p.changes = append(p.changes,
-			change{path: graphPath, content: content},
-			change{path: path, content: nil},
-		)
+		if err := p.set(graphPath, content); err != nil {
+			return err
+		}
+		if err := p.remove(path); err != nil {
+			return err
+		}
 		names := make([]string, 0, len(fileInjectors))
 		for _, injector := range fileInjectors {
 			names = append(names, injector.name)
-			if used := graphVarName(injector.name); used == "" {
+			if graphVarName(injector.name) == "" {
 				return fmt.Errorf("%s: cannot derive a graph variable from %s", path, injector.name)
 			}
 		}
@@ -580,7 +631,7 @@ func (p *plan) addGraphRewrites(injectors []*injectorModel, registry map[string]
 // renderGraphFile rewrites an injector file into a graph file. The original
 // imports are kept, so every package the graph references stays available;
 // goimports then drops whatever the rewrite made unused.
-func renderGraphFile(src *source, injectors []*injectorModel, registry map[string]*setModel) ([]byte, error) {
+func renderGraphFile(src *source, injectors []*injectorModel, sets []*setModel, registry map[string]*setModel) ([]byte, error) {
 	ordered := append([]*injectorModel(nil), injectors...)
 	sort.Slice(ordered, func(i, j int) bool { return ordered[i].start > ordered[j].start })
 
@@ -610,14 +661,19 @@ func renderGraphFile(src *source, injectors []*injectorModel, registry map[strin
 	}
 	block.WriteString(")")
 
-	out := append([]byte(nil), src.src...)
+	// Injectors and provider sets are rewritten in one pass over the original
+	// offsets. A wireinject file may declare both, and a set it declares is
+	// referenced by the graphs that move into the new file, so it has to be
+	// converted rather than dropped with the stub.
+	edits := providerEdits(src, sets)
 	for i, injector := range ordered {
 		replacement := ""
 		if i == len(ordered)-1 {
 			replacement = block.String()
 		}
-		out = append(out[:injector.start], append([]byte(replacement), out[injector.end:]...)...)
+		edits = append(edits, edit{start: injector.start, end: injector.end, text: replacement})
 	}
+	out := applyEdits(src.src, edits)
 	out = stripBuildConstraint(out)
 	out = bytesReplaceImport(out, wireImport, loomImport)
 	return processImports(src.path, out)
@@ -702,9 +758,10 @@ func (p *plan) addCallSiteRewrites(injectors []*injectorModel) error {
 	}
 	sort.Strings(names)
 	// The optional "var" is captured so it is preserved: `var app, f, err = ...`
-	// must stay a declaration.
+	// must stay a declaration, and the cleanup variable is captured too because
+	// projects name it anything from f to cleanup to cl.
 	callPattern := regexp.MustCompile(
-		`(?m)^([ \t]*)(var[ \t]+)?([\w.]+),[ \t]*(?:f|cleanup|fn|cancel),[ \t]*err[ \t]*(:=|=)[ \t]*` +
+		`(?m)^([ \t]*)(var[ \t]+)?([\w.]+),[ \t]*(\w+),[ \t]*err[ \t]*(:=|=)[ \t]*` +
 			`((?:[\w.]+\.)?(?:` + strings.Join(names, "|") + `)\(\))`)
 
 	var touched []string
@@ -727,23 +784,19 @@ func (p *plan) addCallSiteRewrites(injectors []*injectorModel) error {
 		if base := entry.Name(); base == "wire.go" || base == "wire_gen.go" {
 			return nil
 		}
-		src, err := os.ReadFile(path)
+		src, err := p.read(path)
 		if err != nil {
 			return err
 		}
-		updated := callPattern.ReplaceAllString(string(src), "$1$2$3, lifecycle, err $4 $5")
-		if updated == string(src) {
+		edits, changed := callSiteEdits(src, callPattern)
+		if !changed {
 			return nil
 		}
-		updated = strings.ReplaceAll(updated, "defer f()",
-			"defer func() { _ = lifecycle.Stop(context.Background()) }()")
-		updated = strings.ReplaceAll(updated, "defer cleanup()",
-			"defer func() { _ = lifecycle.Stop(context.Background()) }()")
-		content, err := processImports(path, []byte(updated))
+		content, err := processImports(path, applyEdits(src, edits))
 		if err != nil {
 			return err
 		}
-		p.changes = append(p.changes, change{path: path, content: content})
+		p.update(path, content)
 		touched = append(touched, relPath(p.root, path))
 		return nil
 	})
@@ -757,6 +810,33 @@ func (p *plan) addCallSiteRewrites(injectors []*injectorModel) error {
 			strings.Join(touched, ", ")))
 	}
 	return nil
+}
+
+// callSiteEdits renames each injector's cleanup result to lifecycle and turns
+// the defer that called it into lifecycle.Stop.
+//
+// The variable is found by position rather than by name, because the second
+// result is called f, cleanup, cl and anything else depending on the author.
+func callSiteEdits(src []byte, callPattern *regexp.Regexp) ([]edit, bool) {
+	var edits []edit
+	for _, match := range callPattern.FindAllSubmatchIndex(src, -1) {
+		nameStart, nameEnd := match[2*4], match[2*4+1]
+		old := string(src[nameStart:nameEnd])
+		// `_, err := ...` discards the lifecycle; renaming would leave the
+		// variable unused, and there is no defer to convert either.
+		if old == "_" || old == "lifecycle" {
+			continue
+		}
+		edits = append(edits, edit{start: nameStart, end: nameEnd, text: "lifecycle"})
+
+		call := []byte("defer " + old + "()")
+		stop := "defer func() { _ = lifecycle.Stop(context.Background()) }()"
+		if offset := bytes.Index(src[nameEnd:], call); offset >= 0 {
+			start := nameEnd + offset
+			edits = append(edits, edit{start: start, end: start + len(call), text: stop})
+		}
+	}
+	return edits, len(edits) > 0
 }
 
 // addRemoveRewrites deletes Wire's generated files.
@@ -776,7 +856,9 @@ func (p *plan) addRemoveRewrites() error {
 			return nil
 		}
 		if filepath.Base(path) == "wire_gen.go" {
-			p.changes = append(p.changes, change{path: path, content: nil})
+			if err := p.remove(path); err != nil {
+				return err
+			}
 			count++
 		}
 		return nil
@@ -819,7 +901,9 @@ func (p *plan) addMakefileRewrite() error {
 		}
 		return nil
 	}
-	p.changes = append(p.changes, change{path: path, content: []byte(updated)})
+	if err := p.set(path, []byte(updated)); err != nil {
+		return err
+	}
 	p.notes = append(p.notes, "Makefile: `wire` target replaced with `loom`")
 	return nil
 }
