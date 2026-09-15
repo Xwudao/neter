@@ -21,6 +21,7 @@ import (
 const (
 	genTypeRoute = "route"
 	genTypeBiz   = "biz"
+	genTypeSeed  = "seed"
 )
 
 var legacyGenFlagNames = []string{"type", "name", "no-repo", "v2", "with-crud", "with-params", "with-iface", "with-contracts", "ent-name", "model", "plural", "pkg", "skip-wire"}
@@ -47,6 +48,14 @@ var genBizCmd = &cobra.Command{
 	Short: "generate a biz scaffold",
 	Run: func(cmd *cobra.Command, args []string) {
 		utils.CheckErrWithStatus(runTypedGenerator(cmd, genTypeBiz))
+	},
+}
+
+var genSeedCmd = &cobra.Command{
+	Use:   "seed",
+	Short: "generate an idempotent seed scaffold",
+	Run: func(cmd *cobra.Command, args []string) {
+		utils.CheckErrWithStatus(runTypedGenerator(cmd, genTypeSeed))
 	},
 }
 
@@ -102,6 +111,7 @@ func newGenRequest(cmd *cobra.Command, typeName string) (internalgen.Request, er
 		req.EntName, _ = cmd.Flags().GetString("ent-name")
 		req.Model, _ = cmd.Flags().GetString("model")
 		req.Plural, _ = cmd.Flags().GetString("plural")
+	case genTypeSeed:
 	case "":
 		return internalgen.Request{}, errors.New("please specify a generator type")
 	default:
@@ -255,7 +265,7 @@ var genTsCmd = &cobra.Command{
 func init() {
 	strcase.ConfigureAcronym("neo4j", "neo4j")
 
-	genCmd.AddCommand(genRouteCmd, genBizCmd, genEntCmd, genCmdCmd, genTsCmd)
+	genCmd.AddCommand(genRouteCmd, genBizCmd, genSeedCmd, genEntCmd, genCmdCmd, genTsCmd)
 	rootCmd.AddCommand(genCmd)
 
 	genCmd.Flags().StringP("type", "t", genTypeRoute, "type of gen")
@@ -270,6 +280,9 @@ func init() {
 
 	bindBizFlags(genBizCmd.Flags())
 	_ = genBizCmd.MarkFlagRequired("name")
+
+	bindNameFlag(genSeedCmd.Flags())
+	_ = genSeedCmd.MarkFlagRequired("name")
 
 	genEntCmd.Flags().StringP("prefix", "p", "", "prefix of entity")
 	genEntCmd.Flags().StringP("idtype", "i", "int64", "id type of entity")

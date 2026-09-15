@@ -26,6 +26,7 @@ import (
 
 type Generator struct {
 	RootPath        string
+	ProjectRoot     string
 	RouteNameSuffix string
 	PackageName     string
 	ModName         string
@@ -41,12 +42,16 @@ type Generator struct {
 	IsSQLC        bool   // project uses the new PostgreSQL + sqlc stack
 	V2            bool
 
-	routeTpl       string
-	bizTpl         string
-	bizIfaceTpl    string
-	repoTpl        string
-	bizParamsTpl   string
-	bizContractTpl string
+	routeTpl        string
+	bizTpl          string
+	bizIfaceTpl     string
+	repoTpl         string
+	bizParamsTpl    string
+	bizContractTpl  string
+	seedTpl         string
+	seedRegistryTpl string
+	seedCmdTpl      string
+	seedCmdAppTpl   string
 
 	bizSQLCTpl      string
 	bizIfaceSQLCTpl string
@@ -62,6 +67,12 @@ type Generator struct {
 	saveRepoFilePath        string
 	saveBizParamsFilePath   string
 	saveBizContractFilePath string
+	saveSeedFilePath        string
+	saveSeedCmdFilePath     string
+	saveSeedCmdAppFilePath  string
+	saveSeedWireFilePath    string
+
+	BootstrapSeed bool
 
 	Name     string
 	TypeName string
@@ -69,6 +80,7 @@ type Generator struct {
 	StructRouteName string
 	StructBizName   string
 	StructRepoName  string
+	StructSeedName  string
 
 	// UseRouteRegistry is enabled by templates that expose a central
 	// NewRouteRegistry function.  Older projects keep their existing root.go
@@ -139,6 +151,19 @@ func Execute(req Request) (err error) {
 	}()
 
 	switch req.TypeName {
+	case "seed":
+		if g.BootstrapSeed {
+			if err := g.GenSeedInfrastructure(); err != nil {
+				return err
+			}
+		}
+		if err := g.GenSeed(); err != nil {
+			return err
+		}
+		if err := g.updateSeedRegistry(); err != nil {
+			return err
+		}
+		utils.Info("generate seed success")
 	case "route":
 		if err := g.GenRoute(); err != nil {
 			return err
@@ -207,7 +232,9 @@ type fileSnapshot struct {
 func (g *Generator) snapshotMutationFiles() (func() error, error) {
 	paths := []string{
 		g.saveRouteFilePath, g.saveBizFilePath, g.saveBizIfaceFilePath, g.saveRepoFilePath,
-		g.saveBizParamsFilePath, g.saveBizContractFilePath,
+		g.saveBizParamsFilePath, g.saveBizContractFilePath, g.saveSeedFilePath,
+		g.saveSeedCmdFilePath, g.saveSeedCmdAppFilePath, g.saveSeedWireFilePath,
+		filepath.Join(g.RootPath, "seed.go"),
 		filepath.Join(filepath.Dir(g.RootPath), "registry.go"),
 		filepath.Join(filepath.Dir(g.RootPath), "root.go"),
 		filepath.Join(g.RootPath, "provider.go"),
@@ -300,7 +327,11 @@ func (g *Generator) prepare() error {
 		if err != nil {
 			return fmt.Errorf("cannot find project root (go.mod): %w", err)
 		}
+		g.ProjectRoot = root
 		switch g.TypeName {
+		case "seed":
+			g.PackageName = "seed"
+			g.RootPath = filepath.Join(root, "internal", "seed")
 		case "route":
 			pkg := g.Pkg
 			if pkg == "" {
@@ -322,8 +353,24 @@ func (g *Generator) prepare() error {
 	g.saveRepoFilePath = filepath.Join(filepath.Dir(g.RootPath), "data", strcase.ToSnake(g.Name)+g.FilenameRepoSuffix)
 	g.saveBizParamsFilePath = filepath.Join(g.RootPath, "../domain/params", strcase.ToSnake(g.Name)+"_params.go")
 	g.saveBizContractFilePath = filepath.Join(g.RootPath, strcase.ToSnake(g.Name)+"_contract.go")
+	g.saveSeedFilePath = filepath.Join(g.RootPath, strcase.ToSnake(g.Name)+".go")
+	g.saveSeedCmdFilePath = filepath.Join(g.ProjectRoot, "internal", "cmd", "seed.go")
+	g.saveSeedCmdAppFilePath = filepath.Join(g.ProjectRoot, "internal", "cmd_app", "seed_app.go")
+	g.saveSeedWireFilePath = filepath.Join(g.ProjectRoot, "internal", "cmd_app", "wire.go")
+
+	if g.TypeName == "seed" {
+		if _, err := os.Stat(filepath.Join(g.RootPath, "seed.go")); errors.Is(err, os.ErrNotExist) {
+			g.BootstrapSeed = true
+		} else if err != nil {
+			return fmt.Errorf("inspect seed registry: %w", err)
+		}
+	}
 
 	g.routeTpl = tpl.RouteTpl
+	g.seedTpl = tpl.SeedTpl
+	g.seedRegistryTpl = tpl.SeedRegistryTpl
+	g.seedCmdTpl = tpl.SeedCmdTpl
+	g.seedCmdAppTpl = tpl.SeedCmdAppTpl
 	g.bizParamsTpl = tpl.BizParamsTpl
 	g.bizContractTpl = tpl.BizContractTpl
 
@@ -340,6 +387,7 @@ func (g *Generator) prepare() error {
 	g.StructRouteName = strcase.ToCamel(g.Name + "Route")
 	g.StructBizName = strcase.ToCamel(g.Name + "Biz")
 	g.StructRepoName = strcase.ToCamel(g.Name + "Repository")
+	g.StructSeedName = strcase.ToCamel(g.Name + "Seeder")
 	g.V2 = g.V2 || g.usesKoanfV2()
 	if !g.V2 && g.usesLegacyKoanf() {
 		utils.Info("warning: legacy github.com/knadh/koanf detected; run `nr migrate koanf` to preview the v2 migration")
@@ -544,6 +592,111 @@ func (g *Generator) GenBizContracts() error {
 
 func (g *Generator) GenRepo() error {
 	return g.renderTemplateToFile("repo", g.repoTpl, g.saveRepoFilePath)
+}
+
+func (g *Generator) GenSeed() error {
+	return g.renderTemplateToFile("seed", g.seedTpl, g.saveSeedFilePath)
+}
+
+// GenSeedInfrastructure bootstraps the standard seed package and Cobra/Wire
+// command integration for projects that do not have seed support yet.
+func (g *Generator) GenSeedInfrastructure() error {
+	if err := g.renderTemplateToFile("seed_registry", g.seedRegistryTpl, filepath.Join(g.RootPath, "seed.go")); err != nil {
+		return err
+	}
+	if err := g.renderTemplateToFile("seed_cmd", g.seedCmdTpl, g.saveSeedCmdFilePath); err != nil {
+		return err
+	}
+	if err := g.renderTemplateToFile("seed_cmd_app", g.seedCmdAppTpl, g.saveSeedCmdAppFilePath); err != nil {
+		return err
+	}
+	return g.addSeedWireInjector()
+}
+
+func (g *Generator) addSeedWireInjector() error {
+	fset := token.NewFileSet()
+	f, err := parser.ParseFile(fset, g.saveSeedWireFilePath, nil, parser.ParseComments)
+	if err != nil {
+		return fmt.Errorf("parse seed Wire file %s: %w", g.saveSeedWireFilePath, err)
+	}
+	for _, decl := range f.Decls {
+		if fn, ok := decl.(*ast.FuncDecl); ok && fn.Name.Name == "SeedCmd" {
+			return fmt.Errorf("SeedCmd already exists in %s", g.saveSeedWireFilePath)
+		}
+	}
+	if !astutil.AddImport(fset, f, g.ModName+"/internal/seed") {
+		return fmt.Errorf("add seed import to %s", g.saveSeedWireFilePath)
+	}
+
+	injector, err := parser.ParseFile(fset, "seed_injector.go", `package cmd_app
+func SeedCmd() (*SeedApp, func(), error) {
+	panic(wire.Build(NewSeedApp, seed.NewRegistry, system.NewAppContext))
+}`, 0)
+	if err != nil {
+		return err
+	}
+	f.Decls = append(f.Decls, injector.Decls...)
+
+	var dst bytes.Buffer
+	if err := format.Node(&dst, fset, f); err != nil {
+		return err
+	}
+	return utils.SaveToFile(g.saveSeedWireFilePath, dst.Bytes(), true)
+}
+
+// updateSeedRegistry adds a dependency-free scaffold to the standard seed
+// registry. Seeders with dependencies should be registered manually so their
+// construction remains explicit in the application's DI graph.
+func (g *Generator) updateSeedRegistry() error {
+	registryPath := filepath.Join(g.RootPath, "seed.go")
+	fset := token.NewFileSet()
+	f, err := parser.ParseFile(fset, registryPath, nil, parser.ParseComments)
+	if err != nil {
+		return fmt.Errorf("parse seed registry %s: %w", registryPath, err)
+	}
+
+	var registry *ast.FuncDecl
+	for _, decl := range f.Decls {
+		fn, ok := decl.(*ast.FuncDecl)
+		if ok && fn.Name.Name == "NewRegistry" {
+			registry = fn
+			break
+		}
+	}
+	if registry == nil || registry.Body == nil {
+		return fmt.Errorf("can't find NewRegistry in %s", registryPath)
+	}
+
+	constructor := "New" + g.StructSeedName
+	for _, stmt := range registry.Body.List {
+		ret, ok := stmt.(*ast.ReturnStmt)
+		if !ok || len(ret.Results) != 1 {
+			continue
+		}
+		call, ok := ret.Results[0].(*ast.CallExpr)
+		if !ok {
+			continue
+		}
+		for _, arg := range call.Args {
+			if existing, ok := arg.(*ast.CallExpr); ok {
+				if ident, ok := existing.Fun.(*ast.Ident); ok && ident.Name == constructor {
+					return fmt.Errorf("seed registry already contains %s", constructor)
+				}
+			}
+		}
+		call.Args = append(call.Args, &ast.CallExpr{Fun: ast.NewIdent(constructor)})
+
+		var dst bytes.Buffer
+		if err := format.Node(&dst, fset, f); err != nil {
+			return err
+		}
+		if err := utils.SaveToFile(registryPath, dst.Bytes(), true); err != nil {
+			return err
+		}
+		utils.Info("updating seed registry success")
+		return nil
+	}
+	return fmt.Errorf("NewRegistry must return a registry constructor call")
 }
 
 func (g *Generator) renderTemplateToFile(name string, tplText string, savePath string) error {

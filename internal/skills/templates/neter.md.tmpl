@@ -25,6 +25,7 @@ subdirectory and finds the nearest `go.mod`.
 | Build or run with freshly built SPA assets, but not release defaults | `nr build --web` / `nr run --web` | Builds `web/` first and copies its output into embedded assets. |
 | Add a business capability | `nr gen biz -n <name> ...` | Start with this for biz/repository/DI scaffolding; choose the flags in [Biz scaffolding](#biz-scaffolding). |
 | Add a HTTP route scaffold | `nr gen route -n <name>` | Add `--pkg v1` for a route subpackage; use `--v2` only when the project uses the v2 route template. |
+| Add an idempotent seed scaffold | `nr gen seed -n <name>` | On first use, bootstraps the seed registry, Cobra command, and Wire injector; later runs register dependency-free seed scaffolds automatically. |
 | Inspect routes or create frontend API contracts | `nr route-info …` | Use it for Gin route discovery; see [Routes and TypeScript](#routes-and-typescript). |
 | Add a database schema change | `nr migrate new <name>` | Create paired up/down files, edit **both**, review, then apply with `nr migrate up`. |
 | Regenerate generated dependencies | `nr wire`, `nr gen mock`, `make sqlc` | Pick the generator that owns the modified source; see [After changing code](#after-changing-code). |

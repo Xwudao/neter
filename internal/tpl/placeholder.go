@@ -37,3 +37,15 @@ var CmdAppTpl string
 
 //go:embed biz_test.tpl
 var BizTestTpl string
+
+//go:embed seed.tpl
+var SeedTpl string
+
+//go:embed seed_registry.tpl
+var SeedRegistryTpl string
+
+//go:embed seed_cmd.tpl
+var SeedCmdTpl string
+
+//go:embed seed_cmd_app.tpl
+var SeedCmdAppTpl string
