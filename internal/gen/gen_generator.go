@@ -70,7 +70,7 @@ type Generator struct {
 	saveSeedFilePath        string
 	saveSeedCmdFilePath     string
 	saveSeedCmdAppFilePath  string
-	saveSeedWireFilePath    string
+	saveSeedGraphFilePath   string
 
 	BootstrapSeed bool
 
@@ -111,7 +111,7 @@ type Request struct {
 	Model         string // sqlc model name (e.g. User); alias of EntName on new projects
 	Plural        string // sqlc list method plural (default <Model>s)
 	V2            bool
-	SkipWire      bool
+	SkipLoom      bool
 }
 
 func NewGenerator(req Request) *Generator {
@@ -180,8 +180,8 @@ func Execute(req Request) (err error) {
 		if err := g.updateRouteProvider(); err != nil {
 			return err
 		}
-		if !req.SkipWire {
-			if err := g.generateWire(); err != nil {
+		if !req.SkipLoom {
+			if err := g.generateLoom(); err != nil {
 				return err
 			}
 		}
@@ -233,11 +233,14 @@ func (g *Generator) snapshotMutationFiles() (func() error, error) {
 	paths := []string{
 		g.saveRouteFilePath, g.saveBizFilePath, g.saveBizIfaceFilePath, g.saveRepoFilePath,
 		g.saveBizParamsFilePath, g.saveBizContractFilePath, g.saveSeedFilePath,
-		g.saveSeedCmdFilePath, g.saveSeedCmdAppFilePath, g.saveSeedWireFilePath,
+		g.saveSeedCmdFilePath, g.saveSeedCmdAppFilePath, g.saveSeedGraphFilePath,
 		filepath.Join(g.RootPath, "seed.go"),
 		filepath.Join(filepath.Dir(g.RootPath), "registry.go"),
 		filepath.Join(filepath.Dir(g.RootPath), "root.go"),
+		// biz providers live beside the biz package; route providers live one
+		// level up from the generated route sub-package.
 		filepath.Join(g.RootPath, "provider.go"),
+		filepath.Join(filepath.Dir(g.RootPath), "provider.go"),
 		filepath.Join(filepath.Dir(g.RootPath), "data", "provider.go"),
 	}
 	snapshots := make(map[string]fileSnapshot, len(paths))
@@ -272,11 +275,32 @@ func (g *Generator) snapshotMutationFiles() (func() error, error) {
 	}, nil
 }
 
-func (g *Generator) generateWire() error {
+// generateLoom refreshes every loom graph in the project after a generator has
+// edited a provider set or a graph declaration.
+//
+// The loom CLI is pinned by the go.mod "tool" directive, so this runs the exact
+// version the project depends on and needs no global install. A project that
+// has not migrated yet falls back to its Wire injectors.
+func (g *Generator) generateLoom() error {
 	projectRoot, err := utils.FindProjectRoot(8)
 	if err != nil {
-		return fmt.Errorf("find project root for Wire: %w", err)
+		return fmt.Errorf("find project root for Loom: %w", err)
 	}
+	if !utils.CheckExist(filepath.Join(projectRoot, "internal", "cmd_app", "graph.go")) &&
+		utils.CheckExist(filepath.Join(projectRoot, "internal", "cmd_app", "wire.go")) {
+		return regenerateWire(projectRoot)
+	}
+	cmd := exec.Command("go", "tool", "loom", "generate", "./...")
+	cmd.Dir = projectRoot
+	cmd.Stdout, cmd.Stderr = os.Stdout, os.Stderr
+	if err := cmd.Run(); err != nil {
+		return fmt.Errorf("regenerate Loom: %w (run `nr loom convert` if this project still uses Wire)", err)
+	}
+	return nil
+}
+
+// regenerateWire runs the legacy Wire code generator.
+func regenerateWire(projectRoot string) error {
 	cmd := exec.Command("wire", "./cmd/app")
 	cmd.Dir = projectRoot
 	cmd.Stdout, cmd.Stderr = os.Stdout, os.Stderr
@@ -356,7 +380,7 @@ func (g *Generator) prepare() error {
 	g.saveSeedFilePath = filepath.Join(g.RootPath, strcase.ToSnake(g.Name)+".go")
 	g.saveSeedCmdFilePath = filepath.Join(g.ProjectRoot, "internal", "cmd", "seed.go")
 	g.saveSeedCmdAppFilePath = filepath.Join(g.ProjectRoot, "internal", "cmd_app", "seed_app.go")
-	g.saveSeedWireFilePath = filepath.Join(g.ProjectRoot, "internal", "cmd_app", "wire.go")
+	g.saveSeedGraphFilePath = filepath.Join(g.ProjectRoot, "internal", "cmd_app", "graph.go")
 
 	if g.TypeName == "seed" {
 		if _, err := os.Stat(filepath.Join(g.RootPath, "seed.go")); errors.Is(err, os.ErrNotExist) {
@@ -610,38 +634,43 @@ func (g *Generator) GenSeedInfrastructure() error {
 	if err := g.renderTemplateToFile("seed_cmd_app", g.seedCmdAppTpl, g.saveSeedCmdAppFilePath); err != nil {
 		return err
 	}
-	return g.addSeedWireInjector()
+	return g.addSeedGraph()
 }
 
-func (g *Generator) addSeedWireInjector() error {
+// addSeedGraph registers the seed command in the DI graph.
+//
+// seed.NewRegistry is variadic, so it has to be listed explicitly: the seeders
+// it receives are registered one by one by updateSeedRegistry, not injected.
+func (g *Generator) addSeedGraph() error {
 	fset := token.NewFileSet()
-	f, err := parser.ParseFile(fset, g.saveSeedWireFilePath, nil, parser.ParseComments)
+	f, err := parser.ParseFile(fset, g.saveSeedGraphFilePath, nil, parser.ParseComments)
 	if err != nil {
-		return fmt.Errorf("parse seed Wire file %s: %w", g.saveSeedWireFilePath, err)
+		return fmt.Errorf("parse seed graph file %s: %w", g.saveSeedGraphFilePath, err)
 	}
-	for _, decl := range f.Decls {
-		if fn, ok := decl.(*ast.FuncDecl); ok && fn.Name.Name == "SeedCmd" {
-			return fmt.Errorf("SeedCmd already exists in %s", g.saveSeedWireFilePath)
-		}
+	spec := visitor.GraphSpec{
+		VarName:   "seedCmdGraph",
+		Injector:  "SeedCmd",
+		Target:    "*SeedApp",
+		Providers: []string{"NewSeedApp", "seed.NewRegistry", "system.NewAppContext"},
+		Imports: []string{
+			"github.com/Xwudao/loom",
+			g.ModName + "/internal/seed",
+			g.ModName + "/internal/system",
+		},
 	}
-	if !astutil.AddImport(fset, f, g.ModName+"/internal/seed") {
-		return fmt.Errorf("add seed import to %s", g.saveSeedWireFilePath)
+	if err := visitor.AddGraph(fset, f, spec); err != nil {
+		return fmt.Errorf("%s: %w", g.saveSeedGraphFilePath, err)
 	}
-
-	injector, err := parser.ParseFile(fset, "seed_injector.go", `package cmd_app
-func SeedCmd() (*SeedApp, func(), error) {
-	panic(wire.Build(NewSeedApp, seed.NewRegistry, system.NewAppContext))
-}`, 0)
-	if err != nil {
-		return err
-	}
-	f.Decls = append(f.Decls, injector.Decls...)
 
 	var dst bytes.Buffer
 	if err := format.Node(&dst, fset, f); err != nil {
 		return err
 	}
-	return utils.SaveToFile(g.saveSeedWireFilePath, dst.Bytes(), true)
+	reflowed, err := visitor.NewFormatLine().FormatProvider(dst.Bytes())
+	if err != nil {
+		return err
+	}
+	return utils.SaveToFile(g.saveSeedGraphFilePath, reflowed, true)
 }
 
 // updateSeedRegistry adds a dependency-free scaffold to the standard seed
@@ -839,7 +868,7 @@ func (g *Generator) updateBizProvider() error {
 		return err
 	}
 
-	visitor.UpdateProvider(f, "ProviderBizSet", fmt.Sprintf("New%s", g.StructBizName))
+	visitor.AppendProvider(f, "ProviderBizSet", fmt.Sprintf("New%s", g.StructBizName))
 
 	var dst bytes.Buffer
 	if err := format.Node(&dst, fset, f); err != nil {
@@ -873,7 +902,7 @@ func (g *Generator) updateRepoProvider() error {
 		return err
 	}
 
-	visitor.UpdateProvider(f, "ProviderDataSet", fmt.Sprintf("New%s", g.StructRepoName))
+	visitor.AppendProvider(f, "ProviderDataSet", fmt.Sprintf("New%s", g.StructRepoName))
 
 	var dst bytes.Buffer
 	if err := format.Node(&dst, fset, f); err != nil {
@@ -908,10 +937,8 @@ func (g *Generator) updateRouteProvider() error {
 	}
 
 	qualifier := g.addPackageImport(fset, f)
-	walker := visitor.NewRouteProvideVisitor(qualifier, fmt.Sprintf("New%s", g.StructRouteName))
-	ast.Walk(walker, f)
-	if !walker.Updated() {
-		return fmt.Errorf("can't find ProviderRouteSet wire.NewSet declaration in %s", rootFilePath)
+	if !visitor.AppendProvider(f, "ProviderRouteSet", fmt.Sprintf("%s.New%s", qualifier, g.StructRouteName)) {
+		return fmt.Errorf("can't find ProviderRouteSet declaration in %s", rootFilePath)
 	}
 
 	var dst bytes.Buffer

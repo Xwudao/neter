@@ -9,8 +9,8 @@ import (
 
 // {{.StructBizName}}Iface is the interface consumed by route handlers.
 // It is defined alongside its implementation so the biz package remains the single
-// source of truth. Use wire.Bind(new({{.StructBizName}}Iface), new(*{{.StructBizName}})) in
-// the biz provider set so Wire can inject this interface into route constructors.
+// source of truth. Use loom.As[{{.StructBizName}}Iface](New{{.StructBizName}}) in the
+// biz provider set so Loom can inject this interface into route constructors.
 type {{.StructBizName}}Iface interface {
 	Delete(ctx context.Context, id int64) error
 	Get(ctx context.Context, id int64) (*sqlc.{{.Model}}, error)

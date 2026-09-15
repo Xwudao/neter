@@ -1,5 +1,9 @@
 package visitor
 
+// This file keeps the Wire injector stub generator available so `nr gen cmd`
+// still works on projects that have not run `nr loom convert` yet. New projects
+// use AddGraph in graph_update.go.
+
 import (
 	"go/ast"
 )

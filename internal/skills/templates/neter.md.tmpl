@@ -25,10 +25,10 @@ subdirectory and finds the nearest `go.mod`.
 | Build or run with freshly built SPA assets, but not release defaults | `nr build --web` / `nr run --web` | Builds `web/` first and copies its output into embedded assets. |
 | Add a business capability | `nr gen biz -n <name> ...` | Start with this for biz/repository/DI scaffolding; choose the flags in [Biz scaffolding](#biz-scaffolding). |
 | Add a HTTP route scaffold | `nr gen route -n <name>` | Add `--pkg v1` for a route subpackage; use `--v2` only when the project uses the v2 route template. |
-| Add an idempotent seed scaffold | `nr gen seed -n <name>` | On first use, bootstraps the seed registry, Cobra command, and Wire injector; later runs register dependency-free seed scaffolds automatically. |
+| Add an idempotent seed scaffold | `nr gen seed -n <name>` | On first use, bootstraps the seed registry, Cobra command, and DI graph entry; later runs register dependency-free seed scaffolds automatically. |
 | Inspect routes or create frontend API contracts | `nr route-info …` | Use it for Gin route discovery; see [Routes and TypeScript](#routes-and-typescript). |
 | Add a database schema change | `nr migrate new <name>` | Create paired up/down files, edit **both**, review, then apply with `nr migrate up`. |
-| Regenerate generated dependencies | `nr wire`, `nr gen mock`, `make sqlc` | Pick the generator that owns the modified source; see [After changing code](#after-changing-code). |
+| Regenerate generated dependencies | `nr loom`, `nr gen mock`, `make sqlc` | Pick the generator that owns the modified source; see [After changing code](#after-changing-code). |
 | See all flags or an unfamiliar command | `nr <command> --help` | Prefer help over guessing flags or generated file locations. |
 
 ## Development and build workflow
@@ -37,8 +37,8 @@ subdirectory and finds the nearest `go.mod`.
 and frontend `pnpm run dev` in `web/`; change unusual layouts with
 `--backend-cmd`, `--backend-dir`, `--frontend-dir`, `--pm`, or `--frontend-cmd`.
 - Use `nr run` when only the backend is relevant or a one-off executable is
-needed. `--wire` regenerates Wire before building; `--delete` removes the
-built executable after it exits. Do not use `--rm` unless deleting `build/` is
+needed. `--loom` regenerates the dependency injection graphs before building;
+`--delete` removes the built executable after it exits. Do not use `--rm` unless deleting `build/` is
 intentional.
 - Use `nr build` for a binary, `nr build --web` when the binary must include
 current frontend assets, and `nr build --prod` for production-oriented builds.
@@ -63,19 +63,24 @@ snake case for filenames (for example, `-n userProfile` creates
 | HTTP-independent command/query contracts | `--with-contracts` | Adds Command/Query types; use where handlers should not leak HTTP types into biz code. |
 | No repository at all | `--no-repo` | Use for orchestration or external-service-only biz logic. Do not combine it when the capability needs a data repository. |
 | CRUD-shaped database access | `--with-crud` plus the stack-specific model flag | Generates only a starting point. Add schema/queries and implement the generated placeholders. |
-| Avoid automatic DI regeneration | `--skip-wire` | Advanced: use only if you will run `nr wire`/`wire` yourself after reviewing providers. |
+| Avoid automatic DI regeneration | `--skip-loom` | Advanced: use only if you will run `nr loom` yourself after reviewing providers. |
 
-After adding or changing providers, regenerate Wire from the package that owns
-them (`cd cmd/app && wire`, `cd internal/cmd_app && wire`, or `nr wire` to
-regenerate every `wire.go` below the current directory). Check the diff before
-continuing; generated DI code should not be hand-edited.
+After adding or changing providers, regenerate the dependency injection code
+with `nr loom` (or `make loom`). It rewrites every `loom_gen.go` in the project
+from the `loom.Graph` declarations; check the diff before continuing. Generated
+DI code is never hand-edited.
+
+Providers are declared in each package's `provider.go` as a `loom.Module`. An
+interface binding uses `loom.As[Iface](NewImpl)`, which **replaces** the plain
+`loom.Provide(NewImpl)` entry: `As` already provides both the concrete type and
+the interface, and both come from the same instance.
 
 ### Generate a route
 
 ```bash
 nr gen route -n user
 nr gen route -n user -p v1        # route belongs in a subpackage such as v1
-nr gen route -n user --skip-wire  # only if Wire will be regenerated manually
+nr gen route -n user --skip-loom  # only if the graph will be regenerated later
 ```
 
 Use a route scaffold when adding a new Gin handler/registration structure. Do
@@ -109,7 +114,7 @@ to run in this stack.
    `--model` is the sqlc model type; `--plural` controls the list method name
    and defaults to `<Model>s`. Then replace generated
    `errOrderNotImplemented` placeholders with calls to `data.Queries`.
-5. **DI and verification:** regenerate Wire if providers changed, then run
+5. **DI and verification:** regenerate the DI graph if providers changed, then run
    relevant tests (`make test` when available).
 
 Use a migration for durable schema changes, not for a query-only change. Use
@@ -230,7 +235,7 @@ mandatory rather than editing the generated file.
 ## Final checks
 
 Before completing a change: regenerate every affected generator (sqlc, Ent,
-Wire, mocks, routes/TypeScript), inspect generated diffs, run focused tests,
+DI graphs, mocks, routes/TypeScript), inspect generated diffs, run focused tests,
 and run the project's broader test target when practical. Use
 `nr <command> --help` whenever flags, application layout, or deployment
 behavior are uncertain.

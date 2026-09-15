@@ -29,11 +29,15 @@ var migrateRoutesCmd = &cobra.Command{
 		}
 		apply, _ := cmd.Flags().GetBool("apply-registry")
 		injectRouter, _ := cmd.Flags().GetBool("inject-router")
-		skipWire, _ := cmd.Flags().GetBool("skip-wire")
-		if injectRouter {
-			return migrateRouterInjection(dir, apply, skipWire)
+		skipDI, _ := cmd.Flags().GetBool("skip-loom")
+		if !skipDI {
+			// --skip-wire is the pre-Loom spelling of the same switch.
+			skipDI, _ = cmd.Flags().GetBool("skip-wire")
 		}
-		return migrateRoutes(dir, apply, skipWire)
+		if injectRouter {
+			return migrateRouterInjection(dir, apply, skipDI)
+		}
+		return migrateRoutes(dir, apply, skipDI)
 	},
 }
 
@@ -45,12 +49,14 @@ func init() {
 	migrateRoutesCmd.Flags().StringP("dir", "d", "", "project root (default: current directory)")
 	migrateRoutesCmd.Flags().Bool("apply-registry", false, "write the RouteRegistry migration after a preview")
 	migrateRoutesCmd.Flags().Bool("inject-router", false, "migrate registered routes to Register(gin.IRouter)")
-	migrateRoutesCmd.Flags().Bool("skip-wire", false, "do not regenerate Wire after applying (advanced)")
+	migrateRoutesCmd.Flags().Bool("skip-loom", false, "do not regenerate dependency injection code after applying (advanced)")
+	migrateRoutesCmd.Flags().Bool("skip-wire", false, "deprecated alias for --skip-loom")
+	_ = migrateRoutesCmd.Flags().MarkHidden("skip-wire")
 	migrateCmd.AddCommand(migrateRoutesCmd)
 	rootCmd.AddCommand(migrateCmd)
 }
 
-func migrateRouterInjection(root string, apply, skipWire bool) error {
+func migrateRouterInjection(root string, apply, skipDI bool) error {
 	registry := filepath.Join(root, "internal", "routes", "registry.go")
 	if _, err := os.Stat(registry); err != nil {
 		return fmt.Errorf("RouteRegistry is required before --inject-router: %w", err)
@@ -114,7 +120,7 @@ func migrateRouterInjection(root string, apply, skipWire bool) error {
 	if err := writeFormatted(rootFile, []byte(s)); err != nil {
 		return err
 	}
-	if !skipWire {
+	if !skipDI {
 		wire := exec.Command("wire", "./cmd/app")
 		wire.Dir = root
 		wire.Stdout, wire.Stderr = os.Stdout, os.Stderr
@@ -126,7 +132,7 @@ func migrateRouterInjection(root string, apply, skipWire bool) error {
 	return nil
 }
 
-func migrateRoutes(root string, apply, skipWire bool) error {
+func migrateRoutes(root string, apply, skipDI bool) error {
 	rootFile := filepath.Join(root, "internal", "routes", "root.go")
 	registryFile := filepath.Join(root, "internal", "routes", "registry.go")
 	if _, err := os.Stat(registryFile); err == nil {
@@ -135,11 +141,11 @@ func migrateRoutes(root string, apply, skipWire bool) error {
 		}
 		// A previous migration may have stopped after creating the registry
 		// (for example because a non-source reference file was encountered).
-		// Resume only the remaining route-method rewrite and Wire generation.
+		// Resume only the remaining route-method rewrite and DI regeneration.
 		if err := renameRouteRegMethods(root); err != nil {
 			return err
 		}
-		if !skipWire {
+		if !skipDI {
 			return regenerateWire(root)
 		}
 		fmt.Println("RouteRegistry migration resumed.")
@@ -194,7 +200,7 @@ func migrateRoutes(root string, apply, skipWire bool) error {
 	if err := renameRouteRegMethods(root); err != nil {
 		return err
 	}
-	if !skipWire {
+	if !skipDI {
 		if err := regenerateWire(root); err != nil {
 			return err
 		}
@@ -364,12 +370,22 @@ func renameRouteRegMethods(root string) error {
 	})
 }
 
+// regenerateWire refreshes the project's dependency injection code.
+//
+// The route migrations in this file predate the Loom migration, so they delegate
+// to the generator the project actually uses.
 func regenerateWire(root string) error {
+	loom := exec.Command("go", "tool", "loom", "generate", "./...")
+	loom.Dir = root
+	loom.Stdout, loom.Stderr = os.Stdout, os.Stderr
+	if err := loom.Run(); err == nil {
+		return nil
+	}
 	wire := exec.Command("wire", "./cmd/app")
 	wire.Dir = root
 	wire.Stdout, wire.Stderr = os.Stdout, os.Stderr
 	if err := wire.Run(); err != nil {
-		return fmt.Errorf("migration written but Wire regeneration failed: %w", err)
+		return fmt.Errorf("migration written but DI regeneration failed: %w", err)
 	}
 	return nil
 }

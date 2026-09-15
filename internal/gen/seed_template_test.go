@@ -36,13 +36,20 @@ func TestSeedTemplateRenders(t *testing.T) {
 
 func TestGenSeedInfrastructure(t *testing.T) {
 	root := t.TempDir()
-	wirePath := root + "/internal/cmd_app/wire.go"
+	graphPath := root + "/internal/cmd_app/graph.go"
 	require.NoError(t, os.MkdirAll(root+"/internal/cmd_app", 0o755))
-	require.NoError(t, os.WriteFile(wirePath, []byte(`package cmd_app
+	require.NoError(t, os.WriteFile(graphPath, []byte(`package cmd_app
 
 import (
-	"github.com/google/wire"
+	"github.com/Xwudao/loom"
+
 	"example.com/app/internal/system"
+)
+
+var migrateAppGraph = loom.Graph[*MigrateApp](
+	loom.Name("MigrateCmd"),
+	loom.Provide(NewMigrateApp),
+	loom.Provide(system.NewAppContext),
 )
 `), 0o644))
 
@@ -52,7 +59,7 @@ import (
 		ModName:                "example.com/app",
 		saveSeedCmdFilePath:    root + "/internal/cmd/seed.go",
 		saveSeedCmdAppFilePath: root + "/internal/cmd_app/seed_app.go",
-		saveSeedWireFilePath:   wirePath,
+		saveSeedGraphFilePath:  graphPath,
 		seedRegistryTpl:        tpl.SeedRegistryTpl,
 		seedCmdTpl:             tpl.SeedCmdTpl,
 		seedCmdAppTpl:          tpl.SeedCmdAppTpl,
@@ -62,10 +69,12 @@ import (
 	for _, path := range []string{root + "/internal/seed/seed.go", g.saveSeedCmdFilePath, g.saveSeedCmdAppFilePath} {
 		assert.FileExists(t, path)
 	}
-	wireSource, err := os.ReadFile(wirePath)
+	graphSource, err := os.ReadFile(graphPath)
 	require.NoError(t, err)
-	assert.Contains(t, string(wireSource), "seed.NewRegistry")
-	assert.Contains(t, string(wireSource), "func SeedCmd()")
+	assert.Contains(t, string(graphSource), "seed.NewRegistry")
+	assert.Contains(t, string(graphSource), `loom.Name("SeedCmd")`)
+	// The new graph must join the existing block rather than shadow it.
+	assert.Contains(t, string(graphSource), "migrateAppGraph = loom.Graph[*MigrateApp](")
 }
 
 func TestUpdateSeedRegistry(t *testing.T) {

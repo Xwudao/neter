@@ -28,7 +28,7 @@ var runCmd = &cobra.Command{
 		name := cmd.Flag("name").Value.String()
 		del, _ := cmd.Flags().GetBool("delete")
 		rmBuild, _ := cmd.Flags().GetBool("rm")
-		wire, _ := cmd.Flags().GetBool("wire")
+		loom, _ := cmd.Flags().GetBool("loom")
 		dir, _ := cmd.Flags().GetString("dir")
 		extraCmd, _ := cmd.Flags().GetString("cmd")
 		web, _ := cmd.Flags().GetBool("web")
@@ -53,16 +53,14 @@ var runCmd = &cobra.Command{
 		var buildPath = fmt.Sprintf("./%s/", normalizeCommandPath(appRoot))
 		logCommandStep("run", "app=%s binary=%s", appRoot, name)
 
-		// generate wire
-		if wire {
-			logCommandStep("run", "generating wire")
-			if res, err = core.RunWithDir("wire", buildPath, nil, "gen"); err != nil {
-				logCommandOutput("run", "wire output", res)
-				log.Fatalf("[run] wire generation failed: %v", err)
+		// generate dependency injection code
+		if loom {
+			logCommandStep("run", "generating loom graphs")
+			if err = runLoomGenerate(false); err != nil {
+				log.Fatalf("[run] loom generation failed: %v", err)
 				return
 			}
-			logCommandOutput("run", "wire output", res)
-			logCommandSuccess("run", "wire generated")
+			logCommandSuccess("run", "loom graphs generated")
 		}
 
 		// remove `build` directory
@@ -153,7 +151,7 @@ func init() {
 	runCmd.Flags().String("dir", "app", "the directory of the application")
 	runCmd.Flags().StringP("cmd", "c", "", "the extra args set to the application")
 	runCmd.Flags().StringP("name", "n", "main", "the generated app name")
-	runCmd.Flags().BoolP("wire", "w", false, "generate wire file")
+	runCmd.Flags().BoolP("loom", "w", false, "regenerate the loom dependency injection graphs before building")
 	runCmd.Flags().BoolP("rm", "r", false, "remove build/ directory")
 	runCmd.Flags().BoolP("delete", "d", false, "delete the generated app")
 

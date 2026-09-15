@@ -47,7 +47,7 @@ func (g *GenSubCmd) Gen() error {
 	if err := g.genCmdApp(); err != nil {
 		return err
 	}
-	return g.updateWireFile()
+	return g.updateGraphFile()
 }
 
 func (g *GenSubCmd) updateFields() {
@@ -101,7 +101,51 @@ func (g *GenSubCmd) renderTemplateToFile(name string, tplText string, savePath s
 	return utils.SaveToFile(savePath, source, false)
 }
 
-func (g *GenSubCmd) updateWireFile() error {
+// updateGraphFile registers the new command in internal/cmd_app/graph.go.
+//
+// It falls back to internal/cmd_app/wire.go for projects that have not been
+// migrated yet, so `nr gen cmd` keeps working on either layout.
+func (g *GenSubCmd) updateGraphFile() error {
+	graphPath := filepath.Join(g.ModPath, "internal/cmd_app", "graph.go")
+	if !utils.CheckExist(graphPath) {
+		return g.updateLegacyWireFile()
+	}
+	log.Println("updating graph file")
+	fset := token.NewFileSet()
+	f, err := parser.ParseFile(fset, graphPath, nil, parser.ParseComments)
+	if err != nil {
+		return err
+	}
+
+	spec := visitor.GraphSpec{
+		VarName:   g.LowerStructName + "Graph",
+		Injector:  g.LowerStructName,
+		Target:    "*" + g.StructAppName,
+		Providers: []string{"New" + g.StructAppName},
+		Imports:   []string{"github.com/Xwudao/loom"},
+	}
+	if err := visitor.AddGraph(fset, f, spec); err != nil {
+		return err
+	}
+
+	var dst bytes.Buffer
+	if err := format.Node(&dst, fset, f); err != nil {
+		return err
+	}
+	reflowed, err := visitor.NewFormatLine().FormatProvider(dst.Bytes())
+	if err != nil {
+		return err
+	}
+	if err := utils.SaveToFile(graphPath, reflowed, true); err != nil {
+		return err
+	}
+
+	log.Println("update graph file success")
+	return nil
+}
+
+// updateLegacyWireFile appends a Wire injector stub for an unmigrated project.
+func (g *GenSubCmd) updateLegacyWireFile() error {
 	log.Println("updating wire file")
 	wireFilePath := filepath.Join(g.ModPath, "internal/cmd_app", "wire.go")
 	fset := token.NewFileSet()

@@ -12,7 +12,11 @@ import (
 
 
 	"{{.ModName}}/internal/core"
+{{if .IsSQLC -}}
+	"{{.ModName}}/internal/data/sqlc"
+{{else -}}
 	"{{.ModName}}/internal/data/ent/user"
+{{end -}}
 	"{{.ModName}}/internal/routes/mdw"
 )
 
@@ -46,7 +50,7 @@ func (r *{{.StructRouteName}}) {{if .UseRouteRegistry}}Register{{else}}Reg{{end}
 		// authGroup.GET("/auth", {{if .UseTypedAPI}}core.NoInput{{if .UseErrorTypedAPI}}E{{end}}(r.{{.ToLowerCamel .Name}}){{else}}core.WrapData(r.{{.ToLowerCamel .Name}}()){{end}})
 		_ = authGroup
 	}
-	adminGroup := {{if .UseRouterRegister}}router{{else}}r.g{{end}}.Group("/admin/{{.PackageName}}/{{.ToSnake .Name}}").Use(mdw.MustWithRoleMiddleware(user.RoleAdmin))
+	adminGroup := {{if .UseRouterRegister}}router{{else}}r.g{{end}}.Group("/admin/{{.PackageName}}/{{.ToSnake .Name}}").Use(mdw.MustWithRoleMiddleware({{if .IsSQLC}}sqlc.UserRoleAdmin{{else}}user.RoleAdmin{{end}}))
 	{
 		_ = adminGroup
 	}
