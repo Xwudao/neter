@@ -69,5 +69,3 @@ Consequences:
 - `nr gen biz --with-crud` emits `sqlc.<Model>` code on new projects
   (`--model Order`) and `ent.<Name>` code on legacy projects (`--ent-name`).
 - `nr new`, `nr gen ent`, `nr show ent` fail with guidance on new projects.
-- `nr route-info` prints a notice on new projects; it is not maintained for the
-  sqlc template.

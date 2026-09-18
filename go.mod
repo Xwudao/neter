@@ -6,7 +6,6 @@ require (
 	github.com/AlecAivazis/survey/v2 v2.3.7
 	github.com/dave/dst v0.27.3
 	github.com/dave/jennifer v1.7.1
-	github.com/go-toolsmith/strparse v1.1.0
 	github.com/golang-migrate/migrate/v4 v4.20.1
 	github.com/iancoleman/strcase v0.3.0
 	github.com/knadh/koanf/parsers/json v1.0.0

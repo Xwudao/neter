@@ -210,7 +210,6 @@ dev:
     # Set cmd only to replace the default backend command entirely.
     # cmd: "air"
   # frontend.dir/pm also apply to "nr build --web" / "nr run --web"
-  # and to the default output of "nr route-info gen-ts" (<dir>/src/api/generated)
   frontend:
     dir: "web"
     pm: "pnpm"
