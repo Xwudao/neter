@@ -44,6 +44,12 @@ var buildCmd = &cobra.Command{
 		prod, _ := cmd.Flags().GetBool("prod")
 		deploy, _ := cmd.Flags().GetBool("deploy")
 
+		// Explicitly toggling publishing always rebuilds HTML, including when
+		// disabling it after a CDN build. Never embed stale CDN references.
+		if cmd.Flags().Changed("web-publish") {
+			web = true
+		}
+
 		// --prod implies --trim and --web
 		if prod {
 			trim = true
@@ -119,14 +125,22 @@ var buildCmd = &cobra.Command{
 				log.Fatalf("[deploy] load neter.yml failed: %v", err)
 				return
 			}
-			logCommandWarn("neter", "%v", err)
+			log.Fatalf("[neter] load neter.yml failed: %v", err)
+			return
 		}
 
 		if web {
 			webStart := time.Now()
 			logCommandPhaseStart("web", "build web", webStart)
 			webDir, resolvedPm := resolveFrontendOptions(pm, cmd.Flags().Changed("pm"))
-			checkErr(buildWebAssets(webDir, resolvedPm, neterCfg.StopCopyWeb()))
+			var publishOverride *bool
+			if cmd.Flags().Changed("web-publish") {
+				enabled, _ := cmd.Flags().GetBool("web-publish")
+				publishOverride = new(enabled)
+			}
+			publishEnv, err := neterCfg.WebPublishEnv(publishOverride)
+			checkErr(err)
+			checkErr(buildWebAssets(webDir, resolvedPm, neterCfg.StopCopyWeb(), publishEnv...))
 			logCommandPhaseDone("web", "build web", webStart, time.Now())
 		}
 
@@ -297,6 +311,7 @@ func init() {
 	buildCmd.Flags().StringP("cmd", "c", "", "the command to attach to the dlv")
 	buildCmd.Flags().Bool("trim", false, "trim the path and other infos")
 	buildCmd.Flags().Bool("web", false, "build with web assets")
+	buildCmd.Flags().Bool("web-publish", false, "override frontend S3 publishing (implies --web); requires a compatible frontend plugin")
 	buildCmd.Flags().String("pm", "pnpm", "the package manger")
 	buildCmd.Flags().Bool("html", false, "build with web / template")
 	// buildCmd.Flags().Bool("prod", false, "production build: enables --trim --web and injects ldflags from neter.yml")

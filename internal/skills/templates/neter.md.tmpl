@@ -192,13 +192,24 @@ Do not guess a CRUD model flag. First inspect the project:
 
 ## Frontend / SPA
 
-- Source is normally `web/` (Vite). Use `nr dev` for its dev server and
-  `nr build --web`/`nr build --prod` when the Go binary must embed it.
-- The build copies `web/dist` to `assets/dist`, which is embedded into the Go
-  binary. Keep `web/vite.config.ts` `build.manifest: true`; SPA middleware
-  reads `.vite/manifest.json`.
-- A fresh clone may have no `assets/dist`: backend startup still works but SPA
-  routes return 404 until the frontend is built.
+- Source defaults to `web/`; `dev.frontend.dir` selects another directory
+  (for example `web-v2/`) for dev, build and run. Use `nr dev` for its dev
+  server and `nr build --web`/`nr build --prod` for fresh embedded assets.
+- The build synchronises `<frontend>/dist` to `assets/dist`, removing stale
+  output. `build.stop_copy: true` skips this step. Build frontend assets before
+  compiling a fresh checkout whose Go code embeds `assets/dist`.
+- Optional `build.frontend.publish` settings are passed to a compatible local
+  frontend plugin as `NETER_WEB_PUBLISH_CONFIG` JSON. nr does not upload files.
+  `nr build --web-publish[=false]` overrides `enabled` and implies `--web`, even
+  when disabling publishing so stale CDN HTML is rebuilt. Default is off;
+  explicit false also overrides personal frontend `.env` enablement.
+- Publish settings include `endpoint`, `region`, `bucket`, `public_url`, `prefix`,
+  and credential environment variable names (`access_key_id_env`,
+  `secret_access_key_env`). Connection/path values support the same `${...}`
+  expansion as ldflags. Never store credentials directly in neter.yml.
+- Keep standalone/customer binaries independent of a personal CDN: rebuild
+  with `--prod --web-publish=false` before distribution. Upload failure must
+  abort the frontend build before assets are copied or the binary is compiled.
 
 ## Final checks
 

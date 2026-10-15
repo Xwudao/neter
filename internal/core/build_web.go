@@ -40,17 +40,17 @@ func (b *BuildWeb) Check() error {
 
 	return nil
 }
-func (b *BuildWeb) Build() error {
+func (b *BuildWeb) Build(env ...string) error {
 	var res string
 	var err error
 	if res, err = RunWithDir(b.pm, b.frontRoot, nil, "install"); err != nil {
 		return fmt.Errorf("%s install failed: %s\n%s", b.pm, err, res)
 	}
 
-	if res, err = RunWithDir(b.pm, b.frontRoot, nil, "run", "build"); err != nil {
+	if res, err = RunWithDir(b.pm, b.frontRoot, env, "run", "build"); err != nil {
 		return fmt.Errorf("%s run build failed: %s\n%s", b.pm, err, res)
 	}
-	_ = res
+	fmt.Print(res)
 
 	return nil
 }

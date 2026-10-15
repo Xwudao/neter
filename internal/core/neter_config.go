@@ -75,7 +75,8 @@ type BuildConfig struct {
 	// directory to ./assets/dist/ after a web build (nr run --web /
 	// nr build --web). Useful when the frontend build outputs straight to
 	// assets/ and should not be copied again.
-	StopCopy bool `yaml:"stop_copy,omitempty"`
+	StopCopy bool                `yaml:"stop_copy,omitempty"`
+	Frontend FrontendBuildConfig `yaml:"frontend"`
 }
 
 // NeterConfig represents the neter.yml project build configuration.
@@ -201,6 +202,18 @@ build:
     - netpoll
   cgo: false
   stop_copy: false
+  frontend:
+    # Requires a Vite plugin consuming NETER_WEB_PUBLISH_CONFIG.
+    # --web-publish[=false] overrides enabled and implies --web.
+    publish:
+      enabled: false
+      endpoint: "${S3_PUBLISH_ENDPOINT}"
+      region: "auto"
+      bucket: "${S3_PUBLISH_BUCKET}"
+      public_url: "${S3_PUBLISH_PUBLIC_URL}"
+      # Omit prefix to let the plugin create a unique release directory.
+      access_key_id_env: "R2_ACCESS_KEY_ID"
+      secret_access_key_env: "R2_SECRET_ACCESS_KEY"
 
 dev:
   backend:

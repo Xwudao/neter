@@ -150,13 +150,13 @@ func resolveFrontendOptions(pm string, pmChanged bool) (webDir, resolvedPm strin
 // buildWebAssets builds the frontend and, unless stopCopy is set, copies the
 // generated <web>/dist/ to ./assets/dist/. stopCopy corresponds to the
 // neter.yml build.stop_copy setting.
-func buildWebAssets(webDir, pm string, stopCopy bool) error {
+func buildWebAssets(webDir, pm string, stopCopy bool, env ...string) error {
 	logCommandStep("web", "building web assets with %s (dir=%s)", pm, webDir)
 	b := core.NewBuildWeb(webDir, pm)
 	if err := b.Check(); err != nil {
 		return err
 	}
-	if err := b.Build(); err != nil {
+	if err := b.Build(env...); err != nil {
 		return err
 	}
 	if stopCopy {
