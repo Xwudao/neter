@@ -203,6 +203,10 @@ build:
   cgo: false
   stop_copy: false
   frontend:
+    # Optional: absolute backend origin exported as VITE_API_BASE_URL for the
+    # frontend build only. Use for split deployments (static frontend on a CDN,
+    # backend on another domain). Leave empty to keep same-origin API requests.
+    # api_base_url: "https://api.example.com"
     # Requires a Vite plugin consuming NETER_WEB_PUBLISH_CONFIG.
     # --web-publish[=false] overrides enabled and implies --web.
     publish:

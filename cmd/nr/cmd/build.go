@@ -140,7 +140,8 @@ var buildCmd = &cobra.Command{
 			}
 			publishEnv, err := neterCfg.WebPublishEnv(publishOverride)
 			checkErr(err)
-			checkErr(buildWebAssets(webDir, resolvedPm, neterCfg.StopCopyWeb(), publishEnv...))
+			frontendEnv := append(publishEnv, neterCfg.FrontendAPIBaseEnv()...)
+			checkErr(buildWebAssets(webDir, resolvedPm, neterCfg.StopCopyWeb(), frontendEnv...))
 			logCommandPhaseDone("web", "build web", webStart, time.Now())
 		}
 

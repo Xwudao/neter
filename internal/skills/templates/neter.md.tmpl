@@ -198,6 +198,10 @@ Do not guess a CRUD model flag. First inspect the project:
 - The build synchronises `<frontend>/dist` to `assets/dist`, removing stale
   output. `build.stop_copy: true` skips this step. Build frontend assets before
   compiling a fresh checkout whose Go code embeds `assets/dist`.
+- Optional `build.frontend.api_base_url` is exported to the frontend build as
+  `VITE_API_BASE_URL` (frontend build only) for split deployments where the
+  static frontend and backend live on different origins. Leave it empty to keep
+  same-origin API requests for the embedded dist. Supports `${...}` expansion.
 - Optional `build.frontend.publish` settings are passed to a compatible local
   frontend plugin as `NETER_WEB_PUBLISH_CONFIG` JSON. nr does not upload files.
   `nr build --web-publish[=false]` overrides `enabled` and implies `--web`, even

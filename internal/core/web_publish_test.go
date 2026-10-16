@@ -63,6 +63,7 @@ func TestParseWebPublishConfig(t *testing.T) {
 	file := filepath.Join(t.TempDir(), "neter.yml")
 	if err := os.WriteFile(file, []byte(`build:
   frontend:
+    api_base_url: https://api.example.com
     publish:
       enabled: true
       endpoint: https://account.r2.cloudflarestorage.com
@@ -82,5 +83,46 @@ func TestParseWebPublishConfig(t *testing.T) {
 	got := cfg.Build.Frontend.Publish
 	if !got.Enabled || got.Region != "auto" || got.Endpoint == "" || got.Bucket != "assets" || got.PublicURL != "https://cdn.example.com" || got.Prefix != "app/releases/version" || got.AccessKeyIDEnv != "CUSTOM_ID" || got.SecretAccessKeyEnv != "CUSTOM_SECRET" {
 		t.Fatalf("publish settings not parsed: %+v", got)
+	}
+	if cfg.Build.Frontend.APIBaseURL != "https://api.example.com" {
+		t.Fatalf("api_base_url not parsed: %q", cfg.Build.Frontend.APIBaseURL)
+	}
+}
+
+func TestFrontendAPIBaseEnv(t *testing.T) {
+	t.Setenv("API_BASE_TEST_URL", "https://api.from-env.example.com")
+	for _, tc := range []struct {
+		name string
+		cfg  *NeterConfig
+		want []string
+	}{
+		{name: "absent config exports nothing"},
+		{name: "empty value exports nothing", cfg: &NeterConfig{}},
+		{
+			name: "configured value is exported",
+			cfg:  &NeterConfig{Build: BuildConfig{Frontend: FrontendBuildConfig{APIBaseURL: "https://api.example.com"}}},
+			want: []string{"VITE_API_BASE_URL=https://api.example.com"},
+		},
+		{
+			name: "expands shell variables",
+			cfg:  &NeterConfig{Build: BuildConfig{Frontend: FrontendBuildConfig{APIBaseURL: "${API_BASE_TEST_URL}"}}},
+			want: []string{"VITE_API_BASE_URL=https://api.from-env.example.com"},
+		},
+		{
+			name: "unset placeholder exports nothing",
+			cfg:  &NeterConfig{Build: BuildConfig{Frontend: FrontendBuildConfig{APIBaseURL: "${API_BASE_TEST_UNSET}"}}},
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			got := tc.cfg.FrontendAPIBaseEnv()
+			if len(got) != len(tc.want) {
+				t.Fatalf("env = %v, want %v", got, tc.want)
+			}
+			for i := range tc.want {
+				if got[i] != tc.want[i] {
+					t.Fatalf("env = %v, want %v", got, tc.want)
+				}
+			}
+		})
 	}
 }

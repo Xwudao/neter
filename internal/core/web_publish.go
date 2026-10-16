@@ -22,6 +22,26 @@ type WebPublishConfig struct {
 
 type FrontendBuildConfig struct {
 	Publish WebPublishConfig `yaml:"publish"`
+	// APIBaseURL, when non-empty, is exported to the frontend build as
+	// VITE_API_BASE_URL. Split deployments (static frontend on a CDN, backend on
+	// its own domain) use it to prefix relative API requests. Empty keeps the
+	// default same-origin behaviour for the embedded dist served by the backend.
+	APIBaseURL string `yaml:"api_base_url"`
+}
+
+// FrontendAPIBaseEnv exports VITE_API_BASE_URL for the frontend build only.
+// Returns nil when unset (or an unset ${...} placeholder) so inherited shell
+// values or frontend .env files still apply. Supports the same ${...} expansion
+// as ldflags; a configured value overrides those fallbacks.
+func (c *NeterConfig) FrontendAPIBaseEnv() []string {
+	if c == nil {
+		return nil
+	}
+	value := expandVars(c.Build.Frontend.APIBaseURL)
+	if value == "" {
+		return nil
+	}
+	return []string{"VITE_API_BASE_URL=" + value}
 }
 
 // WebPublishEnv passes non-secret settings to the frontend build process only.

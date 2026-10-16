@@ -84,7 +84,8 @@ var runCmd = &cobra.Command{
 			webDir, resolvedPm := resolveFrontendOptions(pm, cmd.Flags().Changed("pm"))
 			publishEnv, err := neterCfg.WebPublishEnv(nil)
 			checkErr(err)
-			checkErr(buildWebAssets(webDir, resolvedPm, neterCfg.StopCopyWeb(), publishEnv...))
+			frontendEnv := append(publishEnv, neterCfg.FrontendAPIBaseEnv()...)
+			checkErr(buildWebAssets(webDir, resolvedPm, neterCfg.StopCopyWeb(), frontendEnv...))
 		}
 
 		// generate app
